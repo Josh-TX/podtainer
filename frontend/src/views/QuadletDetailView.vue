@@ -76,11 +76,11 @@ onMounted(load)
 <template>
   <div class="page-header">
     <h1>{{ filename }}</h1>
-    <RouterLink to="/quadlets"><button>Back</button></RouterLink>
+    <RouterLink to="/quadlets" role="button" class="secondary">Back</RouterLink>
   </div>
 
   <div v-if="error" class="error-banner">{{ error }}</div>
-  <div v-if="loading" class="loading"><span class="spinner"></span> Loading…</div>
+  <p v-if="loading" aria-busy="true">Loading…</p>
 
   <template v-else>
     <div v-if="meta?.stack" class="warn-banner">
@@ -95,12 +95,12 @@ onMounted(load)
 
     <textarea v-model="content" rows="16"></textarea>
 
-    <div class="toolbar" style="margin-top: 1rem;">
-      <button class="primary" @click="save">Save</button>
-      <button @click="action(quadletsApi.start)">Start</button>
-      <button @click="action(quadletsApi.stop)">Stop</button>
-      <button @click="action(quadletsApi.restart)">Restart</button>
-      <button @click="viewLogs">{{ showLogs ? 'Hide Logs' : 'View Logs' }}</button>
+    <div class="toolbar">
+      <button @click="save">Save</button>
+      <button class="secondary" @click="action(quadletsApi.start)">Start</button>
+      <button class="secondary" @click="action(quadletsApi.stop)">Stop</button>
+      <button class="secondary" @click="action(quadletsApi.restart)">Restart</button>
+      <button class="secondary" @click="viewLogs">{{ showLogs ? 'Hide Logs' : 'View Logs' }}</button>
       <button class="danger" @click="remove">Delete</button>
     </div>
 

@@ -1,7 +1,6 @@
 <script setup>
 import { ref, onMounted } from 'vue'
 import { systemdApi } from '../api'
-import RowTable from '../components/RowTable.vue'
 
 const units = ref([])
 const error = ref('')
@@ -28,22 +27,26 @@ onMounted(load)
 
   <div v-if="error" class="error-banner">{{ error }}</div>
 
-  <div v-if="loading" class="loading"><span class="spinner"></span> Loading…</div>
+  <p v-if="loading" aria-busy="true">Loading…</p>
   <template v-else>
-    <RowTable>
-      <div class="row-table-row row-table-head">
-        <div>Unit</div>
-        <div>Active</div>
-        <div>Sub</div>
-        <div>Description</div>
-      </div>
-      <RouterLink v-for="u in units" :key="u.name" :to="`/systemd/${encodeURIComponent(u.name)}`" class="row-table-row">
-        <div>{{ u.name }}</div>
-        <div><span :class="['badge', u.active]">{{ u.active }}</span></div>
-        <div class="muted">{{ u.sub }}</div>
-        <div class="muted">{{ u.description }}</div>
-      </RouterLink>
-    </RowTable>
+    <table class="rows">
+      <thead>
+        <tr>
+          <th>Unit</th>
+          <th>Active</th>
+          <th>Sub</th>
+          <th>Description</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr v-for="u in units" :key="u.name">
+          <td><RouterLink class="row-link" :to="`/systemd/${encodeURIComponent(u.name)}`">{{ u.name }}</RouterLink></td>
+          <td><span :class="['badge', u.active]">{{ u.active }}</span></td>
+          <td class="muted">{{ u.sub }}</td>
+          <td class="muted">{{ u.description }}</td>
+        </tr>
+      </tbody>
+    </table>
     <p v-if="!units.length" class="muted">No quadlet-origin units found.</p>
   </template>
 </template>

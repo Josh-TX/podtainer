@@ -27,11 +27,11 @@ onMounted(load)
 <template>
   <div class="page-header">
     <h1>{{ name }}</h1>
-    <RouterLink to="/systemd"><button>Back</button></RouterLink>
+    <RouterLink to="/systemd" role="button" class="secondary">Back</RouterLink>
   </div>
 
   <div v-if="error" class="error-banner">{{ error }}</div>
-  <div v-else-if="loading" class="loading"><span class="spinner"></span> Loading…</div>
+  <p v-else-if="loading" aria-busy="true">Loading…</p>
   <p v-else-if="!unit" class="muted">Unit not found.</p>
 
   <template v-else>

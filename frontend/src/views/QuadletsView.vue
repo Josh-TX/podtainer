@@ -1,7 +1,6 @@
 <script setup>
 import { ref, onMounted } from 'vue'
 import { quadletsApi } from '../api'
-import RowTable from '../components/RowTable.vue'
 
 const files = ref([])
 const error = ref('')
@@ -28,22 +27,26 @@ onMounted(load)
 
   <div v-if="error" class="error-banner">{{ error }}</div>
 
-  <div v-if="loading" class="loading"><span class="spinner"></span> Loading…</div>
+  <p v-if="loading" aria-busy="true">Loading…</p>
   <template v-else>
-    <RowTable>
-      <div class="row-table-row row-table-head">
-        <div>Filename</div>
-        <div>Type</div>
-        <div>Stack</div>
-        <div>Status</div>
-      </div>
-      <RouterLink v-for="f in files" :key="f.filename" :to="`/quadlets/${encodeURIComponent(f.filename)}`" class="row-table-row">
-        <div>{{ f.filename }}</div>
-        <div>{{ f.type }}</div>
-        <div class="muted">{{ f.stack || 'external' }}</div>
-        <div><span :class="['badge', f.active]">{{ f.active }}</span></div>
-      </RouterLink>
-    </RowTable>
+    <table class="rows">
+      <thead>
+        <tr>
+          <th>Filename</th>
+          <th>Type</th>
+          <th>Stack</th>
+          <th>Status</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr v-for="f in files" :key="f.filename">
+          <td><RouterLink class="row-link" :to="`/quadlets/${encodeURIComponent(f.filename)}`">{{ f.filename }}</RouterLink></td>
+          <td>{{ f.type }}</td>
+          <td class="muted">{{ f.stack || 'external' }}</td>
+          <td><span :class="['badge', f.active]">{{ f.active }}</span></td>
+        </tr>
+      </tbody>
+    </table>
     <p v-if="!files.length" class="muted">No quadlet files found.</p>
   </template>
 </template>

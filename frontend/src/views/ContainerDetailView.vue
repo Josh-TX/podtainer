@@ -65,11 +65,11 @@ onMounted(load)
 <template>
   <div class="page-header">
     <h1>{{ container?.names?.[0] || id.slice(0, 12) }}</h1>
-    <RouterLink to="/containers"><button>Back</button></RouterLink>
+    <RouterLink to="/containers" role="button" class="secondary">Back</RouterLink>
   </div>
 
   <div v-if="error" class="error-banner">{{ error }}</div>
-  <div v-else-if="loading" class="loading"><span class="spinner"></span> Loading…</div>
+  <p v-else-if="loading" aria-busy="true">Loading…</p>
   <p v-else-if="!container" class="muted">Container not found.</p>
 
   <template v-else>
@@ -81,15 +81,13 @@ onMounted(load)
     </div>
 
     <div class="toolbar">
-      <button @click="action(containersApi.start)">Start</button>
-      <button @click="action(containersApi.stop)">Stop</button>
-      <button @click="action(containersApi.restart)">Restart</button>
+      <button class="secondary" @click="action(containersApi.start)">Start</button>
+      <button class="secondary" @click="action(containersApi.stop)">Stop</button>
+      <button class="secondary" @click="action(containersApi.restart)">Restart</button>
       <button class="danger" @click="remove">Remove</button>
     </div>
 
-    <div class="muted" style="margin-bottom: 0.5rem;">
-      CPU: {{ stats?.CPU ?? '—' }} &nbsp; Mem: {{ stats?.MemUsage ?? '—' }}
-    </div>
+    <p class="muted">CPU: {{ stats?.CPU ?? '—' }} &nbsp; Mem: {{ stats?.MemUsage ?? '—' }}</p>
     <pre class="logs">{{ logs }}</pre>
   </template>
 </template>

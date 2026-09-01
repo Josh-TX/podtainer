@@ -1,7 +1,6 @@
 <script setup>
 import { ref, onMounted } from 'vue'
 import { containersApi } from '../api'
-import RowTable from '../components/RowTable.vue'
 
 const containers = ref([])
 const error = ref('')
@@ -28,24 +27,28 @@ onMounted(load)
 
   <div v-if="error" class="error-banner">{{ error }}</div>
 
-  <div v-if="loading" class="loading"><span class="spinner"></span> Loading…</div>
+  <p v-if="loading" aria-busy="true">Loading…</p>
   <template v-else>
-    <RowTable>
-      <div class="row-table-row row-table-head">
-        <div>Name</div>
-        <div>Image</div>
-        <div>State</div>
-        <div>Status</div>
-        <div>Managed by</div>
-      </div>
-      <RouterLink v-for="c in containers" :key="c.id" :to="`/containers/${encodeURIComponent(c.id)}`" class="row-table-row">
-        <div>{{ c.names?.[0] || c.id.slice(0, 12) }}</div>
-        <div class="muted">{{ c.image }}</div>
-        <div><span :class="['badge', c.state]">{{ c.state }}</span></div>
-        <div class="muted">{{ c.status }}</div>
-        <div class="muted">{{ c.systemdUnit || '—' }}</div>
-      </RouterLink>
-    </RowTable>
+    <table class="rows">
+      <thead>
+        <tr>
+          <th>Name</th>
+          <th>Image</th>
+          <th>State</th>
+          <th>Status</th>
+          <th>Managed by</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr v-for="c in containers" :key="c.id">
+          <td><RouterLink class="row-link" :to="`/containers/${encodeURIComponent(c.id)}`">{{ c.names?.[0] || c.id.slice(0, 12) }}</RouterLink></td>
+          <td class="muted">{{ c.image }}</td>
+          <td><span :class="['badge', c.state]">{{ c.state }}</span></td>
+          <td class="muted">{{ c.status }}</td>
+          <td class="muted">{{ c.systemdUnit || '—' }}</td>
+        </tr>
+      </tbody>
+    </table>
     <p v-if="!containers.length" class="muted">No containers found.</p>
   </template>
 </template>

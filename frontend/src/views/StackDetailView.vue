@@ -102,32 +102,36 @@ onMounted(load)
 <template>
   <div class="page-header">
     <h1>{{ isNew ? 'New Stack' : name }}</h1>
-    <RouterLink to="/stacks"><button>Back</button></RouterLink>
+    <RouterLink to="/stacks" role="button" class="secondary">Back</RouterLink>
   </div>
 
   <div v-if="error" class="error-banner">{{ error }}</div>
-  <div v-if="loading" class="loading"><span class="spinner"></span> Loading…</div>
+  <p v-if="loading" aria-busy="true">Loading…</p>
 
   <template v-else>
-    <label class="muted">Stack name</label>
-    <input v-if="isNew" v-model="name" placeholder="mystack" style="display:block; margin: 0.25rem 0 1rem; padding: 0.4rem; background:#0d0f12; color:#e6e6e6; border:1px solid #3a4048; border-radius:4px;" />
+    <label>
+      Stack name
+      <input v-if="isNew" v-model="name" placeholder="mystack" />
+    </label>
 
     <div v-if="!isNew && status" class="toolbar">
       <span v-if="!status.deployed" class="badge notdeployed">Not Deployed</span>
       <span v-else-if="status.drift" class="badge drift">Needs Redeploy</span>
     </div>
 
-    <label class="muted">docker-compose.yml</label>
-    <textarea v-model="content" rows="16"></textarea>
+    <label>
+      docker-compose.yml
+      <textarea v-model="content" rows="16"></textarea>
+    </label>
 
-    <div class="toolbar" style="margin-top: 1rem;">
-      <button class="primary" :disabled="busy || !name" @click="saveAndDeploy(false)">Save &amp; Deploy</button>
-      <button v-if="!isNew" :disabled="busy" @click="saveAndDeploy(true)">Force Redeploy</button>
-      <button v-if="!isNew" :disabled="busy" @click="pullAndRestart">Pull &amp; Restart</button>
+    <div class="toolbar">
+      <button :disabled="busy || !name" @click="saveAndDeploy(false)">Save &amp; Deploy</button>
+      <button v-if="!isNew" class="secondary" :disabled="busy" @click="saveAndDeploy(true)">Force Redeploy</button>
+      <button v-if="!isNew" class="secondary" :disabled="busy" @click="pullAndRestart">Pull &amp; Restart</button>
       <button v-if="!isNew" class="danger" :disabled="busy" @click="remove">Delete</button>
     </div>
 
-    <div v-if="!isNew && status" style="margin-top: 2rem;">
+    <template v-if="!isNew && status">
       <h2>Services</h2>
       <table>
         <thead>
@@ -143,16 +147,16 @@ onMounted(load)
             <td>{{ serviceFromFilename(u.filename) }}</td>
             <td><span :class="['badge', u.active]">{{ u.active }}</span></td>
             <td><span :class="['badge', u.health]">{{ u.health }}</span></td>
-            <td><button @click="toggleLogs(serviceFromFilename(u.filename))">
+            <td><button class="secondary" @click="toggleLogs(serviceFromFilename(u.filename))">
               {{ logsByService[serviceFromFilename(u.filename)] !== undefined ? 'Hide Logs' : 'View Logs' }}
             </button></td>
           </tr>
         </tbody>
       </table>
       <template v-for="(logs, service) in logsByService" :key="service">
-        <p class="muted" style="margin-top:1rem;">{{ service }}</p>
+        <p class="muted">{{ service }}</p>
         <pre class="logs">{{ logs }}</pre>
       </template>
-    </div>
+    </template>
   </template>
 </template>
