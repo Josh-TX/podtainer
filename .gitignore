@@ -1,0 +1,5 @@
+frontend/node_modules/
+backend/internal/webui/dist/
+/podtainer
+*.log
+backend/__debug_bin*
