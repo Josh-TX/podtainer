@@ -13,7 +13,6 @@ import (
 	"time"
 
 	"podtainer/internal/execx"
-	"podtainer/internal/quadlets"
 )
 
 // Unit is one generated file, keyed by its final on-disk basename
@@ -96,10 +95,6 @@ func Generate(ctx context.Context, stackName, composePath string) ([]Unit, error
 		Filename: fmt.Sprintf("%s-default.network", stackName),
 		Content:  networkUnit(stackName),
 	})
-	units = append(units, Unit{
-		Filename: fmt.Sprintf("%s.target", stackName),
-		Content:  targetUnit(stackName, units),
-	})
 
 	sort.Slice(units, func(i, j int) bool { return units[i].Filename < units[j].Filename })
 	return units, nil
@@ -107,8 +102,6 @@ func Generate(ctx context.Context, stackName, composePath string) ([]Unit, error
 
 func postProcessContainer(raw, stackName, serviceName string) string {
 	uf := ParseUnitFile(raw)
-
-	uf.Set("Unit", "PartOf", stackName+".target")
 
 	uf.Set("Container", "ContainerName", stackName+"-"+serviceName)
 	uf.RemoveKey("Container", "Network")
@@ -119,6 +112,10 @@ func postProcessContainer(raw, stackName, serviceName string) string {
 	if !uf.HasKey("Service", "Restart") {
 		uf.Set("Service", "Restart", "on-failure")
 	}
+
+	// Quadlet auto-generates the .wants symlink for this at generator time,
+	// so the container starts on boot without an explicit `systemctl enable`.
+	uf.Set("Install", "WantedBy", "default.target")
 
 	return uf.String()
 }
@@ -133,29 +130,5 @@ func postProcessVolume(raw, stackName, volumeName string) string {
 func networkUnit(stackName string) string {
 	uf := &UnitFile{}
 	uf.Set("Network", "Label", "podtainer.stack="+stackName)
-	return uf.String()
-}
-
-// targetUnit lists every container unit under Wants=/After= so that
-// `systemctl start <stack>.target` brings the whole stack up: PartOf= on the
-// containers only propagates stop/restart, not start, so the target has to
-// pull its members in explicitly.
-func targetUnit(stackName string, units []Unit) string {
-	var containers []string
-	for _, u := range units {
-		if strings.HasSuffix(u.Filename, ".container") {
-			containers = append(containers, quadlets.UnitName(u.Filename))
-		}
-	}
-	sort.Strings(containers)
-
-	uf := &UnitFile{}
-	uf.Set("Unit", "Description", stackName+" stack")
-	if len(containers) > 0 {
-		list := strings.Join(containers, " ")
-		uf.Set("Unit", "Wants", list)
-		uf.Set("Unit", "After", list)
-	}
-	uf.Set("Install", "WantedBy", "default.target")
 	return uf.String()
 }

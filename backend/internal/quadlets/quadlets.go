@@ -39,9 +39,8 @@ func UnitName(filename string) string {
 }
 
 // unitType recognizes actual quadlet unit types. A .target file here would
-// be misplaced debris, not a legitimate quadlet resident — Podtainer's own
-// per-stack .target files live in systemd's user unit directory instead —
-// so it's deliberately not included and falls through to "other".
+// be misplaced debris, not a legitimate quadlet resident, so it's
+// deliberately not included and falls through to "other".
 func unitType(ext string) string {
 	switch ext {
 	case ".container", ".network", ".volume", ".pod", ".kube":

@@ -29,6 +29,12 @@ a { color: #7db8ff; }
 table { width: 100%; border-collapse: collapse; }
 th, td { text-align: left; padding: 0.5rem 0.75rem; border-bottom: 1px solid #2a2f37; }
 th { color: #9aa4b2; font-weight: 600; font-size: 0.85rem; text-transform: uppercase; }
+.row-table { display: table; width: 100%; border-collapse: collapse; }
+.row-table-row { display: table-row; }
+.row-table-row > * { display: table-cell; text-align: left; padding: 0.5rem 0.75rem; border-bottom: 1px solid #2a2f37; vertical-align: middle; }
+.row-table-head { color: #9aa4b2; font-weight: 600; font-size: 0.85rem; text-transform: uppercase; }
+a.row-table-row { text-decoration: none; color: inherit; cursor: pointer; }
+a.row-table-row:hover { background: #1e232b; }
 button { cursor: pointer; background: #262b33; color: #e6e6e6; border: 1px solid #3a4048; border-radius: 4px; padding: 0.35rem 0.75rem; font-size: 0.85rem; }
 button:hover { background: #323945; }
 button.danger:hover { background: #5a2a2a; border-color: #7a3a3a; }
@@ -47,4 +53,8 @@ pre.logs { background: #0d0f12; border: 1px solid #3a4048; border-radius: 4px; p
 .toolbar { display: flex; gap: 0.5rem; margin-bottom: 1rem; flex-wrap: wrap; }
 .page-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem; }
 .muted { color: #9aa4b2; font-size: 0.85rem; }
+.loading { display: flex; align-items: center; gap: 0.6rem; color: #9aa4b2; padding: 1.5rem 0; opacity: 0; animation: fade-in 0.8s ease forwards; }
+.spinner { width: 1.1rem; height: 1.1rem; border: 2px solid #3a4048; border-top-color: #7db8ff; border-radius: 50%; animation: spin 0.7s linear infinite; flex-shrink: 0; }
+@keyframes spin { to { transform: rotate(360deg); } }
+@keyframes fade-in { to { opacity: 1; } }
 </style>

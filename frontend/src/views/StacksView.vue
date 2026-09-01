@@ -1,6 +1,7 @@
 <script setup>
 import { ref, onMounted } from 'vue'
 import { stacksApi } from '../api'
+import RowTable from '../components/RowTable.vue'
 
 const stacks = ref([])
 const error = ref('')
@@ -43,31 +44,25 @@ onMounted(load)
   </div>
 
   <div v-if="error" class="error-banner">{{ error }}</div>
-  <p v-if="loading" class="muted">Loading…</p>
+  <div v-if="loading" class="loading"><span class="spinner"></span> Loading…</div>
 
-  <table v-else>
-    <thead>
-      <tr>
-        <th>Name</th>
-        <th>Status</th>
-        <th>Health</th>
-        <th>Services</th>
-      </tr>
-    </thead>
-    <tbody>
-      <tr v-for="s in stacks" :key="s.name">
-        <td><RouterLink :to="`/stacks/${s.name}`">{{ s.name }}</RouterLink></td>
-        <td>
-          <span v-if="!s.deployed" class="badge notdeployed">Not Deployed</span>
-          <span v-else-if="s.drift" class="badge drift">Needs Redeploy</span>
-          <span v-else :class="['badge', aggregateActive(s.units)]">{{ aggregateActive(s.units) }}</span>
-        </td>
-        <td><span :class="['badge', aggregateHealth(s.units)]">{{ aggregateHealth(s.units) }}</span></td>
-        <td class="muted">{{ s.units.filter(u => u.filename.endsWith('.container')).length }}</td>
-      </tr>
-      <tr v-if="!stacks.length">
-        <td colspan="4" class="muted">No stacks yet.</td>
-      </tr>
-    </tbody>
-  </table>
+  <RowTable v-else>
+    <div class="row-table-row row-table-head">
+      <div>Name</div>
+      <div>Status</div>
+      <div>Health</div>
+      <div>Services</div>
+    </div>
+    <RouterLink v-for="s in stacks" :key="s.name" :to="`/stacks/${encodeURIComponent(s.name)}`" class="row-table-row">
+      <div>{{ s.name }}</div>
+      <div>
+        <span v-if="!s.deployed" class="badge notdeployed">Not Deployed</span>
+        <span v-else-if="s.drift" class="badge drift">Needs Redeploy</span>
+        <span v-else :class="['badge', aggregateActive(s.units)]">{{ aggregateActive(s.units) }}</span>
+      </div>
+      <div><span :class="['badge', aggregateHealth(s.units)]">{{ aggregateHealth(s.units) }}</span></div>
+      <div class="muted">{{ s.units.filter(u => u.filename.endsWith('.container')).length }}</div>
+    </RouterLink>
+  </RowTable>
+  <p v-if="!loading && !stacks.length" class="muted">No stacks yet.</p>
 </template>

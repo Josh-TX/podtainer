@@ -60,55 +60,29 @@ func Read(cfg *config.Config, name string) (string, error) {
 	return string(b), nil
 }
 
-// dirFor returns the directory a generated file belongs in: .target files
-// are plain systemd units and must live in systemd's own user unit
-// directory, everything else is a real quadlet type and lives in the
-// quadlet search path.
-func dirFor(cfg *config.Config, filename string) string {
-	if strings.HasSuffix(filename, ".target") {
-		return cfg.TargetDir
+// installedFiles returns the on-disk quadlet files owned by this stack,
+// keyed by filename to content, identified purely by the stack-prefix
+// naming convention.
+func installedFiles(cfg *config.Config, name string) (map[string]string, error) {
+	out := map[string]string{}
+	prefix := name + "-"
+
+	entries, err := os.ReadDir(cfg.QuadletDir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return out, nil
+		}
+		return nil, err
 	}
-	return cfg.QuadletDir
-}
-
-type installedFile struct {
-	dir     string
-	content string
-}
-
-// installedFiles returns the on-disk unit files owned by this stack, keyed
-// by filename, identified purely by the stack-prefix naming convention,
-// across both the quadlet directory and systemd's user unit directory. If a
-// stack-prefixed file turns up in the "wrong" one of those two directories
-// (e.g. left over from a bug, or a manual mistake), it's still reported here
-// so Deploy can clean it up rather than silently ignoring it.
-func installedFiles(cfg *config.Config, name string) (map[string]installedFile, error) {
-	out := map[string]installedFile{}
-	dashPrefix := name + "-"
-	dotPrefix := name + "."
-
-	for _, dir := range []string{cfg.QuadletDir, cfg.TargetDir} {
-		entries, err := os.ReadDir(dir)
+	for _, e := range entries {
+		if e.IsDir() || !strings.HasPrefix(e.Name(), prefix) {
+			continue
+		}
+		b, err := os.ReadFile(filepath.Join(cfg.QuadletDir, e.Name()))
 		if err != nil {
-			if os.IsNotExist(err) {
-				continue
-			}
 			return nil, err
 		}
-		for _, e := range entries {
-			if e.IsDir() {
-				continue
-			}
-			n := e.Name()
-			if !strings.HasPrefix(n, dashPrefix) && !strings.HasPrefix(n, dotPrefix) {
-				continue
-			}
-			b, err := os.ReadFile(filepath.Join(dir, n))
-			if err != nil {
-				return nil, err
-			}
-			out[n] = installedFile{dir: dir, content: string(b)}
-		}
+		out[e.Name()] = string(b)
 	}
 	return out, nil
 }
@@ -146,35 +120,26 @@ func Deploy(ctx context.Context, cfg *config.Config, name, content string, force
 	}
 
 	var toRemove, toWrite []string
-	for filename, old := range existing {
-		_, stillWanted := genMap[filename]
-		if !stillWanted {
-			toRemove = append(toRemove, filename)
-			continue
-		}
-		// A stack-prefixed file sitting in the wrong directory (e.g. a
-		// .target that ended up in the quadlet dir) needs to be removed
-		// from there even though the filename is still wanted overall.
-		if old.dir != dirFor(cfg, filename) {
+	for filename := range existing {
+		if _, stillWanted := genMap[filename]; !stillWanted {
 			toRemove = append(toRemove, filename)
 		}
 	}
 	for filename, newContent := range genMap {
-		old, existed := existing[filename]
-		wrongDir := existed && old.dir != dirFor(cfg, filename)
-		if force || !existed || wrongDir || old.content != newContent {
+		oldContent, existed := existing[filename]
+		if force || !existed || oldContent != newContent {
 			toWrite = append(toWrite, filename)
 		}
 	}
 
 	for _, filename := range orderForRemoval(toRemove) {
-		if err := quadlets.RemoveFile(ctx, existing[filename].dir, filename); err != nil {
+		if err := quadlets.RemoveFile(ctx, cfg.QuadletDir, filename); err != nil {
 			return err
 		}
 	}
 
 	for _, filename := range toWrite {
-		if err := os.WriteFile(filepath.Join(dirFor(cfg, filename), filename), []byte(genMap[filename]), 0o644); err != nil {
+		if err := os.WriteFile(filepath.Join(cfg.QuadletDir, filename), []byte(genMap[filename]), 0o644); err != nil {
 			return err
 		}
 	}
@@ -183,8 +148,16 @@ func Deploy(ctx context.Context, cfg *config.Config, name, content string, force
 		return err
 	}
 
-	if _, err := execx.Run(ctx, "systemctl", "--user", "start", name+".target"); err != nil {
-		return err
+	// Each container carries its own [Install] WantedBy=default.target, so
+	// starting it here is what brings it up now that there's no stack
+	// target to pull the whole set in at once.
+	for _, u := range generated {
+		if !strings.HasSuffix(u.Filename, ".container") {
+			continue
+		}
+		if _, err := execx.Run(ctx, "systemctl", "--user", "start", quadlets.UnitName(u.Filename)); err != nil {
+			return err
+		}
 	}
 
 	// Units that already existed and merely changed content need an
@@ -206,11 +179,6 @@ func Deploy(ctx context.Context, cfg *config.Config, name, content string, force
 // referenced by a .volume unit file here, which is included in this delete
 // like any other unit — the underlying `podman volume` data is untouched.
 func Delete(ctx context.Context, cfg *config.Config, name string) error {
-	// Best-effort: the target may already be stopped, failed, or gone
-	// entirely (e.g. cleaning up after a previous partial failure), none
-	// of which should block removing what's actually left.
-	_, _ = execx.Run(ctx, "systemctl", "--user", "stop", name+".target")
-
 	existing, err := installedFiles(cfg, name)
 	if err != nil {
 		return err
@@ -220,7 +188,7 @@ func Delete(ctx context.Context, cfg *config.Config, name string) error {
 		filenames = append(filenames, filename)
 	}
 	for _, filename := range orderForRemoval(filenames) {
-		if err := quadlets.RemoveFile(ctx, existing[filename].dir, filename); err != nil {
+		if err := quadlets.RemoveFile(ctx, cfg.QuadletDir, filename); err != nil {
 			return err
 		}
 	}
@@ -234,9 +202,8 @@ func Delete(ctx context.Context, cfg *config.Config, name string) error {
 }
 
 // orderForRemoval sorts filenames so containers are torn down before the
-// networks they're attached to, and everything else (volumes, targets)
-// last — `podman network rm` fails while a container still references the
-// network.
+// networks they're attached to, and everything else (volumes) last —
+// `podman network rm` fails while a container still references the network.
 func orderForRemoval(filenames []string) []string {
 	rank := func(f string) int {
 		switch {
@@ -254,7 +221,7 @@ func orderForRemoval(filenames []string) []string {
 }
 
 // PullAndRestart pulls every image referenced by the stack's compose file
-// and restarts the whole stack via its target unit.
+// and restarts every container unit in the stack.
 func PullAndRestart(ctx context.Context, cfg *config.Config, name string) error {
 	content, err := Read(cfg, name)
 	if err != nil {
@@ -269,8 +236,20 @@ func PullAndRestart(ctx context.Context, cfg *config.Config, name string) error 
 			return err
 		}
 	}
-	_, err = execx.Run(ctx, "systemctl", "--user", "restart", name+".target")
-	return err
+
+	existing, err := installedFiles(cfg, name)
+	if err != nil {
+		return err
+	}
+	for filename := range existing {
+		if !strings.HasSuffix(filename, ".container") {
+			continue
+		}
+		if _, err := execx.Run(ctx, "systemctl", "--user", "restart", quadlets.UnitName(filename)); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // GetStatus reports deployment/drift state plus per-unit systemd/health
@@ -289,7 +268,7 @@ func GetStatus(ctx context.Context, cfg *config.Config, name string) (*Status, e
 			for _, u := range generated {
 				genMap[u.Filename] = u.Content
 			}
-			st.Drift = !filesEqual(cfg, existing, genMap)
+			st.Drift = !filesEqual(existing, genMap)
 		}
 	}
 
@@ -320,12 +299,12 @@ func GetStatus(ctx context.Context, cfg *config.Config, name string) (*Status, e
 	return st, nil
 }
 
-func filesEqual(cfg *config.Config, a map[string]installedFile, b map[string]string) bool {
+func filesEqual(a, b map[string]string) bool {
 	if len(a) != len(b) {
 		return false
 	}
 	for k, v := range a {
-		if bv, ok := b[k]; !ok || bv != v.content || v.dir != dirFor(cfg, k) {
+		if bv, ok := b[k]; !ok || bv != v {
 			return false
 		}
 	}

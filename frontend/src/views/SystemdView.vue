@@ -1,16 +1,21 @@
 <script setup>
 import { ref, onMounted } from 'vue'
 import { systemdApi } from '../api'
+import RowTable from '../components/RowTable.vue'
 
 const units = ref([])
 const error = ref('')
+const loading = ref(true)
 
 async function load() {
   error.value = ''
+  loading.value = true
   try {
     units.value = await systemdApi.list()
   } catch (e) {
     error.value = e.message
+  } finally {
+    loading.value = false
   }
 }
 
@@ -23,27 +28,22 @@ onMounted(load)
 
   <div v-if="error" class="error-banner">{{ error }}</div>
 
-  <table>
-    <thead>
-      <tr>
-        <th>Unit</th>
-        <th>Active</th>
-        <th>Sub</th>
-        <th>Description</th>
-        <th>Source</th>
-      </tr>
-    </thead>
-    <tbody>
-      <tr v-for="u in units" :key="u.name">
-        <td>{{ u.name }}</td>
-        <td><span :class="['badge', u.active]">{{ u.active }}</span></td>
-        <td class="muted">{{ u.sub }}</td>
-        <td class="muted">{{ u.description }}</td>
-        <td class="muted">{{ u.sourcePath }}</td>
-      </tr>
-      <tr v-if="!units.length">
-        <td colspan="5" class="muted">No quadlet-origin units found.</td>
-      </tr>
-    </tbody>
-  </table>
+  <div v-if="loading" class="loading"><span class="spinner"></span> Loading…</div>
+  <template v-else>
+    <RowTable>
+      <div class="row-table-row row-table-head">
+        <div>Unit</div>
+        <div>Active</div>
+        <div>Sub</div>
+        <div>Description</div>
+      </div>
+      <RouterLink v-for="u in units" :key="u.name" :to="`/systemd/${encodeURIComponent(u.name)}`" class="row-table-row">
+        <div>{{ u.name }}</div>
+        <div><span :class="['badge', u.active]">{{ u.active }}</span></div>
+        <div class="muted">{{ u.sub }}</div>
+        <div class="muted">{{ u.description }}</div>
+      </RouterLink>
+    </RowTable>
+    <p v-if="!units.length" class="muted">No quadlet-origin units found.</p>
+  </template>
 </template>
