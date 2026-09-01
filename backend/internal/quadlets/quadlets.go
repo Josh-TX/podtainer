@@ -38,10 +38,10 @@ func UnitName(filename string) string {
 	return filename
 }
 
-// unitType recognizes actual quadlet unit types. A .target file here would
+// UnitType recognizes actual quadlet unit types. A .target file here would
 // be misplaced debris, not a legitimate quadlet resident, so it's
 // deliberately not included and falls through to "other".
-func unitType(ext string) string {
+func UnitType(ext string) string {
 	switch ext {
 	case ".container", ".network", ".volume", ".pod", ".kube":
 		return strings.TrimPrefix(ext, ".")
@@ -79,7 +79,7 @@ func List(ctx context.Context, quadletDir string) ([]File, error) {
 			continue
 		}
 		ext := filepath.Ext(e.Name())
-		f := File{Filename: e.Name(), Type: unitType(ext), Active: "unknown"}
+		f := File{Filename: e.Name(), Type: UnitType(ext), Active: "unknown"}
 
 		if raw, err := os.ReadFile(filepath.Join(quadletDir, e.Name())); err == nil {
 			f.Stack = stackFromLabel(string(raw))

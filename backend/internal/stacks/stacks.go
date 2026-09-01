@@ -18,17 +18,29 @@ import (
 	"podtainer/internal/quadlets"
 )
 
-type UnitStatus struct {
+type QuadletUnitStatus struct {
 	Filename string `json:"filename"`
-	Active   string `json:"active"`
-	Health   string `json:"health"`
+	Type     string `json:"type"`
+}
+
+type SystemdUnitStatus struct {
+	Unit   string `json:"unit"`
+	Active string `json:"active"`
+}
+
+type ContainerStatus struct {
+	Name   string `json:"name"`
+	State  string `json:"state"`
+	Health string `json:"health"`
 }
 
 type Status struct {
-	Name     string       `json:"name"`
-	Deployed bool         `json:"deployed"`
-	Drift    bool         `json:"drift"`
-	Units    []UnitStatus `json:"units"`
+	Name             string              `json:"name"`
+	Deployed         bool                `json:"deployed"`
+	Drift            bool                `json:"drift"`
+	QuadletUnits     []QuadletUnitStatus `json:"quadletUnits"`
+	SystemdUnits     []SystemdUnitStatus `json:"systemdUnits"`
+	PodmanContainers []ContainerStatus   `json:"podmanContainers"`
 }
 
 func composePath(cfg *config.Config, name string) string {
@@ -260,7 +272,7 @@ func GetStatus(ctx context.Context, cfg *config.Config, name string) (*Status, e
 		return nil, err
 	}
 
-	st := &Status{Name: name, Deployed: len(existing) > 0, Units: []UnitStatus{}}
+	st := &Status{Name: name, Deployed: len(existing) > 0, PodmanContainers: []ContainerStatus{}}
 
 	if _, err := os.Stat(composePath(cfg, name)); err == nil {
 		if generated, err := quadletgen.Generate(ctx, name, composePath(cfg, name)); err == nil {
@@ -279,21 +291,33 @@ func GetStatus(ctx context.Context, cfg *config.Config, name string) (*Status, e
 	sort.Strings(filenames)
 
 	for _, filename := range filenames {
-		us := UnitStatus{Filename: filename, Active: "unknown", Health: "none"}
+		st.QuadletUnits = append(st.QuadletUnits, QuadletUnitStatus{
+			Filename: filename,
+			Type:     quadlets.UnitType(filepath.Ext(filename)),
+		})
+
 		unit := quadlets.UnitName(filename)
+		active := "unknown"
 		if out, err := execx.Run(ctx, "systemctl", "--user", "show", unit, "--property=ActiveState", "--value"); err == nil {
-			us.Active = strings.TrimSpace(out)
+			active = strings.TrimSpace(out)
 		}
+		st.SystemdUnits = append(st.SystemdUnits, SystemdUnitStatus{Unit: unit, Active: active})
+
 		if strings.HasSuffix(filename, ".container") {
 			container := strings.TrimSuffix(filename, ".container")
-			if out, err := execx.Run(ctx, "podman", "inspect", container, "--format", "{{.State.Health.Status}}"); err == nil {
-				h := strings.TrimSpace(out)
-				if h != "" && h != "<no value>" {
-					us.Health = h
+			cs := ContainerStatus{Name: container, State: "unknown", Health: "none"}
+			out, err := execx.Run(ctx, "podman", "inspect", container, "--format", "{{.State.Status}}|{{.State.Health.Status}}")
+			if err == nil {
+				parts := strings.SplitN(strings.TrimSpace(out), "|", 2)
+				if parts[0] != "" {
+					cs.State = parts[0]
+				}
+				if len(parts) == 2 && parts[1] != "" && parts[1] != "<no value>" {
+					cs.Health = parts[1]
 				}
 			}
+			st.PodmanContainers = append(st.PodmanContainers, cs)
 		}
-		st.Units = append(st.Units, us)
 	}
 
 	return st, nil

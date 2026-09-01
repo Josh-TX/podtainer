@@ -18,7 +18,7 @@ async function load() {
   if (firstLoad) loading.value = true
   try {
     const list = await containersApi.list()
-    container.value = list.find((c) => c.id === props.id) || null
+    container.value = list.find((c) => c.id === props.id || c.names?.includes(props.id)) || null
   } catch (e) {
     error.value = e.message
   }

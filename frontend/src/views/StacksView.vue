@@ -6,19 +6,16 @@ const stacks = ref([])
 const error = ref('')
 const loading = ref(true)
 
-function aggregateActive(units) {
-  if (!units.length) return 'unknown'
-  if (units.some((u) => u.active === 'failed')) return 'failed'
-  if (units.every((u) => u.active === 'active')) return 'active'
-  return 'inactive'
+function healthRatio(containers) {
+  const total = containers.length
+  const success = containers.filter((c) => c.state === 'running' && (c.health === 'healthy' || c.health === 'none')).length
+  return { success, total }
 }
 
-function aggregateHealth(units) {
-  const healths = units.map((u) => u.health).filter((h) => h && h !== 'none')
-  if (healths.includes('unhealthy')) return 'unhealthy'
-  if (healths.includes('starting')) return 'starting'
-  if (healths.includes('healthy')) return 'healthy'
-  return 'none'
+function healthClass({ success, total }) {
+  if (total === 0 || success === 0) return 'unhealthy'
+  if (success === total) return 'healthy'
+  return 'starting'
 }
 
 async function load() {
@@ -50,7 +47,6 @@ onMounted(load)
       <tr>
         <th>Name</th>
         <th>Status</th>
-        <th>Health</th>
         <th>Services</th>
       </tr>
     </thead>
@@ -60,10 +56,9 @@ onMounted(load)
         <td>
           <span v-if="!s.deployed" class="badge notdeployed">Not Deployed</span>
           <span v-else-if="s.drift" class="badge drift">Needs Redeploy</span>
-          <span v-else :class="['badge', aggregateActive(s.units)]">{{ aggregateActive(s.units) }}</span>
+          <span v-else :class="['badge', healthClass(healthRatio(s.podmanContainers))]">{{ healthRatio(s.podmanContainers).success }}/{{ healthRatio(s.podmanContainers).total }}</span>
         </td>
-        <td><span :class="['badge', aggregateHealth(s.units)]">{{ aggregateHealth(s.units) }}</span></td>
-        <td class="muted">{{ s.units.filter(u => u.filename.endsWith('.container')).length }}</td>
+        <td class="muted">{{ s.podmanContainers.length }}</td>
       </tr>
     </tbody>
   </table>

@@ -53,6 +53,14 @@ button.danger {
   --pico-border-color: var(--pico-del-color);
 }
 
+.dropdown li a.danger-link {
+  color: var(--pico-del-color) !important;
+}
+
+.toolbar details.dropdown {
+  margin-bottom: 0;
+}
+
 .badge {
   display: inline-block;
   padding: 0.15rem 0.6rem;
@@ -61,6 +69,10 @@ button.danger {
   font-weight: 600;
   color: var(--badge-color, var(--pico-muted-color));
   background-color: color-mix(in srgb, var(--badge-color, var(--pico-muted-color)) 15%, transparent);
+  vertical-align: middle;
+}
+h1 .badge {
+  margin-left: 0.6rem;
 }
 .badge.active, .badge.healthy, .badge.deployed { --badge-color: var(--pico-ins-color); }
 .badge.failed, .badge.unhealthy { --badge-color: var(--pico-del-color); }
@@ -96,4 +108,19 @@ table.rows a.row-link::after {
   content: '';
   position: absolute;
   inset: 0;
+}
+table.rows td button {
+  position: relative;
+  z-index: 1;
+}
+
+.stack-columns {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2rem;
+  align-items: flex-start;
+}
+.stack-columns > .col {
+  flex: 1 1 420px;
+  min-width: 0;
 }

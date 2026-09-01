@@ -1,5 +1,5 @@
 <script setup>
-import { ref, onMounted, computed } from 'vue'
+import { ref, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { stacksApi } from '../api'
 
@@ -12,9 +12,20 @@ const content = ref(props.isNew ? 'services:\n  web:\n    image: docker.io/libra
 const status = ref(null)
 const error = ref('')
 const busy = ref(false)
-const logsByService = ref({})
 const loading = ref(!props.isNew)
 let firstLoad = true
+
+function healthRatio(containers) {
+  const total = containers.length
+  const success = containers.filter((c) => c.state === 'running' && (c.health === 'healthy' || c.health === 'none')).length
+  return { success, total }
+}
+
+function healthClass({ success, total }) {
+  if (total === 0 || success === 0) return 'unhealthy'
+  if (success === total) return 'healthy'
+  return 'starting'
+}
 
 async function load() {
   if (props.isNew) return
@@ -75,88 +86,98 @@ async function remove() {
   }
 }
 
-function serviceFromFilename(filename) {
-  // "<stack>-<service>.container" -> "<service>"
-  const base = filename.replace(/\.container$/, '')
-  return base.slice(name.value.length + 1)
-}
-
-async function toggleLogs(service) {
-  if (logsByService.value[service] !== undefined) {
-    delete logsByService.value[service]
-    return
-  }
-  try {
-    const { logs } = await stacksApi.serviceLogs(name.value, service)
-    logsByService.value = { ...logsByService.value, [service]: logs }
-  } catch (e) {
-    logsByService.value = { ...logsByService.value, [service]: 'Error: ' + e.message }
-  }
-}
-
-const containerUnits = computed(() => (status.value?.units || []).filter((u) => u.filename.endsWith('.container')))
-
 onMounted(load)
 </script>
 
 <template>
   <div class="page-header">
-    <h1>{{ isNew ? 'New Stack' : name }}</h1>
-    <RouterLink to="/stacks" role="button" class="secondary">Back</RouterLink>
+    <h1>
+      {{ isNew ? 'New Stack' : name }}
+      <span v-if="!isNew && status && !status.deployed" class="badge notdeployed">Not Deployed</span>
+      <span v-else-if="!isNew && status && status.drift" class="badge drift">Needs Redeploy</span>
+      <span v-else-if="!isNew && status" :class="['badge', healthClass(healthRatio(status.podmanContainers))]">{{ healthRatio(status.podmanContainers).success }}/{{ healthRatio(status.podmanContainers).total }}</span>
+    </h1>
+    <div class="toolbar" style="margin-bottom: 0">
+      <button :disabled="busy || !name" @click="saveAndDeploy(false)">Save &amp; Deploy</button>
+      <details v-if="!isNew" class="dropdown">
+        <summary role="button" class="secondary">More Options</summary>
+        <ul>
+          <li><a href="#" @click.prevent="!busy && saveAndDeploy(true)">Force Redeploy</a></li>
+          <li><a href="#" @click.prevent="!busy && pullAndRestart()">Pull &amp; Restart</a></li>
+          <li><a href="#" class="danger-link" @click.prevent="!busy && remove()">Delete</a></li>
+        </ul>
+      </details>
+    </div>
   </div>
 
   <div v-if="error" class="error-banner">{{ error }}</div>
   <p v-if="loading" aria-busy="true">Loading…</p>
 
   <template v-else>
-    <label>
+    <label v-if="isNew">
       Stack name
-      <input v-if="isNew" v-model="name" placeholder="mystack" />
+      <input v-model="name" placeholder="mystack" />
     </label>
 
-    <div v-if="!isNew && status" class="toolbar">
-      <span v-if="!status.deployed" class="badge notdeployed">Not Deployed</span>
-      <span v-else-if="status.drift" class="badge drift">Needs Redeploy</span>
+    <div class="stack-columns">
+      <div class="col">
+        <label>
+          docker-compose.yml
+          <textarea v-model="content" rows="16"></textarea>
+        </label>
+      </div>
+
+      <div class="col" v-if="!isNew && status">
+        <h2>Quadlet Units</h2>
+        <table class="rows">
+          <thead>
+            <tr>
+              <th>Filename</th>
+              <th>Type</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="u in status.quadletUnits" :key="u.filename">
+              <td><RouterLink class="row-link" :to="`/quadlets/${encodeURIComponent(u.filename)}`">{{ u.filename }}</RouterLink></td>
+              <td class="muted">{{ u.type }}</td>
+            </tr>
+          </tbody>
+        </table>
+
+        <h2>Systemd Units</h2>
+        <table class="rows">
+          <thead>
+            <tr>
+              <th>Unit</th>
+              <th>Status</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="u in status.systemdUnits" :key="u.unit">
+              <td><RouterLink class="row-link" :to="`/systemd/${encodeURIComponent(u.unit)}`">{{ u.unit }}</RouterLink></td>
+              <td><span :class="['badge', u.active]">{{ u.active }}</span></td>
+            </tr>
+          </tbody>
+        </table>
+
+        <h2>Podman Containers</h2>
+        <table class="rows">
+          <thead>
+            <tr>
+              <th>Name</th>
+              <th>State</th>
+              <th>Health</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="c in status.podmanContainers" :key="c.name">
+              <td><RouterLink class="row-link" :to="`/containers/${encodeURIComponent(c.name)}`">{{ c.name }}</RouterLink></td>
+              <td><span :class="['badge', c.state]">{{ c.state }}</span></td>
+              <td><span :class="['badge', c.health]">{{ c.health }}</span></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
     </div>
-
-    <label>
-      docker-compose.yml
-      <textarea v-model="content" rows="16"></textarea>
-    </label>
-
-    <div class="toolbar">
-      <button :disabled="busy || !name" @click="saveAndDeploy(false)">Save &amp; Deploy</button>
-      <button v-if="!isNew" class="secondary" :disabled="busy" @click="saveAndDeploy(true)">Force Redeploy</button>
-      <button v-if="!isNew" class="secondary" :disabled="busy" @click="pullAndRestart">Pull &amp; Restart</button>
-      <button v-if="!isNew" class="danger" :disabled="busy" @click="remove">Delete</button>
-    </div>
-
-    <template v-if="!isNew && status">
-      <h2>Services</h2>
-      <table>
-        <thead>
-          <tr>
-            <th>Service</th>
-            <th>Status</th>
-            <th>Health</th>
-            <th></th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr v-for="u in containerUnits" :key="u.filename">
-            <td>{{ serviceFromFilename(u.filename) }}</td>
-            <td><span :class="['badge', u.active]">{{ u.active }}</span></td>
-            <td><span :class="['badge', u.health]">{{ u.health }}</span></td>
-            <td><button class="secondary" @click="toggleLogs(serviceFromFilename(u.filename))">
-              {{ logsByService[serviceFromFilename(u.filename)] !== undefined ? 'Hide Logs' : 'View Logs' }}
-            </button></td>
-          </tr>
-        </tbody>
-      </table>
-      <template v-for="(logs, service) in logsByService" :key="service">
-        <p class="muted">{{ service }}</p>
-        <pre class="logs">{{ logs }}</pre>
-      </template>
-    </template>
   </template>
 </template>
