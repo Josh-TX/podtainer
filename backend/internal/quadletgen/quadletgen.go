@@ -5,15 +5,36 @@ package quadletgen
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
 	"time"
 
 	"podtainer/internal/execx"
 )
+
+// podletReasonRe matches podlet's numbered error-chain lines (e.g.
+// "   3: extension key `port` does not start with \"x-\"") so the deepest
+// one — the actual root cause — can be surfaced on its own instead of the
+// whole multi-line Rust error/backtrace dump.
+var podletReasonRe = regexp.MustCompile(`(?m)^\s*\d+:\s*(.+?)\s*$`)
+
+// podletErrorReason extracts the most specific line from podlet's stderr, if
+// it's in podlet's usual numbered-chain shape; otherwise it falls back to
+// the full error text.
+func podletErrorReason(err error) string {
+	var cmdErr *execx.CmdError
+	if errors.As(err, &cmdErr) && cmdErr.Stderr != "" {
+		if matches := podletReasonRe.FindAllStringSubmatch(cmdErr.Stderr, -1); len(matches) > 0 {
+			return matches[len(matches)-1][1]
+		}
+	}
+	return err.Error()
+}
 
 // Unit is one generated file, keyed by its final on-disk basename
 // (e.g. "mystack-web.container").
@@ -45,13 +66,24 @@ func Generate(ctx context.Context, stackName, composePath string) ([]Unit, error
 	// pre-rename name podlet checks against isn't the name that will
 	// actually be used.
 	if _, err := execx.RunLong(ctx, 30*time.Second, "podlet", "--file", tmpDir, "--skip-services-check", "compose", composePath); err != nil {
-		return nil, fmt.Errorf("podlet conversion failed: %w", err)
+		return nil, fmt.Errorf("invalid compose file: %s", podletErrorReason(err))
 	}
 
 	entries, err := os.ReadDir(tmpDir)
 	if err != nil {
 		return nil, err
 	}
+
+	containerCount := 0
+	for _, e := range entries {
+		if !e.IsDir() && filepath.Ext(e.Name()) == ".container" {
+			containerCount++
+		}
+	}
+	// A single-container stack has nothing to network with, so Podtainer
+	// skips authoring a network unit and leaves the container on podman's
+	// default network.
+	needsNetwork := containerCount > 1
 
 	var units []Unit
 	for _, e := range entries {
@@ -77,7 +109,7 @@ func Generate(ctx context.Context, stackName, composePath string) ([]Unit, error
 		case ".container":
 			units = append(units, Unit{
 				Filename: fmt.Sprintf("%s-%s.container", stackName, base),
-				Content:  postProcessContainer(string(raw), stackName, base),
+				Content:  postProcessContainer(string(raw), stackName, base, needsNetwork),
 			})
 		case ".volume":
 			units = append(units, Unit{
@@ -91,21 +123,25 @@ func Generate(ctx context.Context, stackName, composePath string) ([]Unit, error
 		}
 	}
 
-	units = append(units, Unit{
-		Filename: fmt.Sprintf("%s-default.network", stackName),
-		Content:  networkUnit(stackName),
-	})
+	if needsNetwork {
+		units = append(units, Unit{
+			Filename: fmt.Sprintf("%s-default.network", stackName),
+			Content:  networkUnit(stackName),
+		})
+	}
 
 	sort.Slice(units, func(i, j int) bool { return units[i].Filename < units[j].Filename })
 	return units, nil
 }
 
-func postProcessContainer(raw, stackName, serviceName string) string {
+func postProcessContainer(raw, stackName, serviceName string, needsNetwork bool) string {
 	uf := ParseUnitFile(raw)
 
 	uf.Set("Container", "ContainerName", stackName+"-"+serviceName)
 	uf.RemoveKey("Container", "Network")
-	uf.Append("Container", "Network", stackName+"-default.network")
+	if needsNetwork {
+		uf.Append("Container", "Network", stackName+"-default.network")
+	}
 	uf.Append("Container", "Label", "podtainer.stack="+stackName)
 	uf.Append("Container", "Label", "podtainer.service="+serviceName)
 

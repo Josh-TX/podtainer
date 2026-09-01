@@ -5,9 +5,18 @@ import (
 	"context"
 	"fmt"
 	"os/exec"
+	"regexp"
 	"strings"
 	"time"
 )
+
+var ansiRe = regexp.MustCompile("\x1b\\[[0-9;]*m")
+
+// stripANSI removes color/style escape codes some CLIs (e.g. podlet) emit
+// even when stderr isn't a terminal, so captured error text stays readable.
+func stripANSI(s string) string {
+	return ansiRe.ReplaceAllString(s, "")
+}
 
 // CmdError carries the captured stderr so callers can surface it verbatim in the UI.
 type CmdError struct {
@@ -40,7 +49,7 @@ func Run(ctx context.Context, name string, args ...string) (string, error) {
 	if err != nil {
 		return stdout.String(), &CmdError{
 			Cmd:    name + " " + strings.Join(args, " "),
-			Stderr: stderr.String(),
+			Stderr: stripANSI(stderr.String()),
 			Err:    err,
 		}
 	}
@@ -61,7 +70,7 @@ func RunLong(ctx context.Context, timeout time.Duration, name string, args ...st
 	if err != nil {
 		return stdout.String(), &CmdError{
 			Cmd:    name + " " + strings.Join(args, " "),
-			Stderr: stderr.String(),
+			Stderr: stripANSI(stderr.String()),
 			Err:    err,
 		}
 	}
