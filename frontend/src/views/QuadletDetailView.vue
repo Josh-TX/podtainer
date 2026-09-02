@@ -115,7 +115,6 @@ onMounted(load)
           <li><a href="#" @click.prevent="!busy && action(quadletsApi.start)">Start</a></li>
           <li><a href="#" @click.prevent="!busy && action(quadletsApi.stop)">Stop</a></li>
           <li><a href="#" @click.prevent="!busy && action(quadletsApi.restart)">Restart</a></li>
-          <li><a href="#" @click.prevent="viewLogs">{{ showLogs ? 'Hide Logs' : 'View Logs' }}</a></li>
           <li><a href="#" class="danger-link" @click.prevent="!busy && remove()">Delete</a></li>
         </ul>
       </details>
@@ -132,42 +131,35 @@ onMounted(load)
           Unit file
           <textarea v-model="content" rows="16"></textarea>
         </label>
-
-        <pre v-if="showLogs" class="logs">{{ logs }}</pre>
       </div>
 
       <div class="col">
-        <article v-if="meta?.stack">
-          <h2>Stack</h2>
-          <p>
-            <RouterLink :to="`/stacks/${encodeURIComponent(meta.stack)}`">{{ meta.stack }}</RouterLink>
+        <article>
+          <p v-if="meta?.stack" style="margin-bottom: 0.25rem">
+            Stack: <RouterLink :to="`/stacks/${encodeURIComponent(meta.stack)}`">{{ meta.stack }}</RouterLink>
+          </p>
+
+          <p style="margin-bottom: 0.25rem">
+            Systemd unit:
+            <template v-if="systemdUnit">
+              <span :class="['badge', systemdUnit.active]">{{ systemdUnit.active }}</span>
+              <RouterLink :to="`/systemd/${encodeURIComponent(systemdUnit.name)}`">{{ systemdUnit.name }}</RouterLink>
+            </template>
+            <span v-else class="muted">Not found.</span>
+          </p>
+
+          <p v-if="meta?.type === 'container'" style="margin-bottom: 0">
+            Podman container:
+            <template v-if="container">
+              <span :class="['badge', container.state]">{{ container.state }}</span>
+              <RouterLink :to="`/containers/${encodeURIComponent(container.id)}`">{{ container.names[0] }}</RouterLink>
+            </template>
+            <span v-else class="muted">No running container.</span>
           </p>
         </article>
 
-        <article>
-          <h2>Systemd Unit</h2>
-          <p v-if="!systemdUnit" class="muted">Not found.</p>
-          <template v-else>
-            <RouterLink :to="`/systemd/${encodeURIComponent(systemdUnit.name)}`">{{ systemdUnit.name }}</RouterLink>
-            <div class="toolbar">
-              <span :class="['badge', systemdUnit.active]">{{ systemdUnit.active }}</span>
-              <span class="muted">{{ systemdUnit.sub }}</span>
-            </div>
-            <p><span class="muted">Description:</span> {{ systemdUnit.description || '—' }}</p>
-          </template>
-        </article>
-
-        <article v-if="meta?.type === 'container'">
-          <h2>Podman Container</h2>
-          <p v-if="!container" class="muted">No running container.</p>
-          <template v-else>
-            <RouterLink :to="`/containers/${encodeURIComponent(container.id)}`">{{ container.names[0] }}</RouterLink>
-            <div class="toolbar">
-              <span :class="['badge', container.state]">{{ container.state }}</span>
-              <span class="muted">{{ container.status }}</span>
-            </div>
-          </template>
-        </article>
+        <button class="secondary" @click="viewLogs">{{ showLogs ? 'Hide Logs' : 'View Logs' }}</button>
+        <pre v-if="showLogs" class="logs">{{ logs }}</pre>
       </div>
     </div>
   </template>

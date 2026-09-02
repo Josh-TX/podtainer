@@ -133,13 +133,13 @@ onMounted(load)
           <thead>
             <tr>
               <th>Filename</th>
-              <th>Type</th>
+              <th>Status</th>
             </tr>
           </thead>
           <tbody>
             <tr v-for="u in status.quadletUnits" :key="u.filename">
               <td><RouterLink class="row-link" :to="`/quadlets/${encodeURIComponent(u.filename)}`">{{ u.filename }}</RouterLink></td>
-              <td class="muted">{{ u.type }}</td>
+              <td><span :class="['badge', u.active]">{{ u.active }}</span></td>
             </tr>
           </tbody>
         </table>

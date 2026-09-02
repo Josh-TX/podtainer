@@ -20,7 +20,7 @@ import (
 
 type QuadletUnitStatus struct {
 	Filename string `json:"filename"`
-	Type     string `json:"type"`
+	Active   string `json:"active"`
 }
 
 type SystemdUnitStatus struct {
@@ -291,22 +291,18 @@ func GetStatus(ctx context.Context, cfg *config.Config, name string) (*Status, e
 	sort.Strings(filenames)
 
 	for _, filename := range filenames {
-		st.QuadletUnits = append(st.QuadletUnits, QuadletUnitStatus{
-			Filename: filename,
-			Type:     quadlets.UnitType(filepath.Ext(filename)),
-		})
-
 		unit := quadlets.UnitName(filename)
 		active := "unknown"
 		if out, err := execx.Run(ctx, "systemctl", "--user", "show", unit, "--property=ActiveState", "--value"); err == nil {
 			active = strings.TrimSpace(out)
 		}
+		st.QuadletUnits = append(st.QuadletUnits, QuadletUnitStatus{Filename: filename, Active: active})
 		st.SystemdUnits = append(st.SystemdUnits, SystemdUnitStatus{Unit: unit, Active: active})
 
 		if strings.HasSuffix(filename, ".container") {
 			container := strings.TrimSuffix(filename, ".container")
 			cs := ContainerStatus{Name: container, State: "unknown", Health: "none"}
-			out, err := execx.Run(ctx, "podman", "inspect", container, "--format", "{{.State.Status}}|{{.State.Health.Status}}")
+			out, err := execx.Run(ctx, "podman", "inspect", container, "--format", "{{.State.Status}}|{{if .State.Health}}{{.State.Health.Status}}{{end}}")
 			if err == nil {
 				parts := strings.SplitN(strings.TrimSpace(out), "|", 2)
 				if parts[0] != "" {
