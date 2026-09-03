@@ -3,6 +3,7 @@ import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { quadletsApi, systemdApi, containersApi } from '../api'
 import { unitBadgeClass, restartingLabel } from '../unitBadge'
+import CodeEditor from '../components/CodeEditor.vue'
 
 const props = defineProps({ filename: { type: String, required: true } })
 const router = useRouter()
@@ -132,7 +133,7 @@ onMounted(load)
 
     <div class="stack-columns">
       <div class="col">
-        <textarea v-model="content" rows="16"></textarea>
+        <CodeEditor v-model="content" language="unit" max-height="26rem" />
       </div>
 
       <div class="col">
@@ -161,7 +162,7 @@ onMounted(load)
         </article>
 
         <button class="secondary" @click="viewLogs">{{ showLogs ? 'Hide Logs' : 'View Logs' }}</button>
-        <pre v-if="showLogs" class="logs">{{ logs }}</pre>
+        <CodeEditor v-if="showLogs" :model-value="logs" readonly autoscroll />
       </div>
     </div>
   </template>

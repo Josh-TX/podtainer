@@ -103,16 +103,6 @@ h1 .badge {
 .error-banner { border-color: var(--pico-del-color); }
 .warn-banner { border-color: light-dark(#9a6700, #e3b341); }
 
-pre.logs {
-  background: var(--pico-code-background-color);
-  border-radius: var(--pico-border-radius);
-  padding: 0.75rem;
-  max-height: 400px;
-  overflow: auto;
-  font-size: 0.8rem;
-  white-space: pre-wrap;
-}
-
 table.rows tr { position: relative; cursor: pointer; }
 table.rows tbody tr:hover td { background-color: var(--pico-code-background-color); }
 table.rows a.row-link {

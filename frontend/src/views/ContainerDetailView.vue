@@ -2,6 +2,7 @@
 import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { containersApi } from '../api'
+import CodeEditor from '../components/CodeEditor.vue'
 
 const props = defineProps({ id: { type: String, required: true } })
 const router = useRouter()
@@ -88,6 +89,6 @@ onMounted(load)
     </div>
 
     <p class="muted">CPU: {{ stats?.CPU ?? '—' }} &nbsp; Mem: {{ stats?.MemUsage ?? '—' }}</p>
-    <pre class="logs">{{ logs }}</pre>
+    <CodeEditor :model-value="logs" readonly autoscroll />
   </template>
 </template>

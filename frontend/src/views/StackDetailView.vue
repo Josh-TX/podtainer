@@ -3,6 +3,7 @@ import { ref, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { stacksApi } from '../api'
 import { unitBadgeClass, restartingLabel } from '../unitBadge'
+import CodeEditor from '../components/CodeEditor.vue'
 
 const props = defineProps({ isNew: { type: Boolean, default: false } })
 const route = useRoute()
@@ -130,7 +131,7 @@ onMounted(load)
 
     <div class="stack-columns">
       <div class="col">
-        <textarea v-model="content" rows="16"></textarea>
+        <CodeEditor v-model="content" language="yaml" max-height="26rem" />
       </div>
 
       <div class="col" v-if="!isNew && status">

@@ -2,6 +2,7 @@
 import { ref, onMounted } from 'vue'
 import { systemdApi, quadletsApi, containersApi } from '../api'
 import { unitBadgeClass, restartingLabel } from '../unitBadge'
+import CodeEditor from '../components/CodeEditor.vue'
 
 const props = defineProps({ name: { type: String, required: true } })
 
@@ -69,7 +70,7 @@ onMounted(load)
 
     <div class="stack-columns">
       <div class="col">
-        <pre class="logs">{{ content }}</pre>
+        <CodeEditor :model-value="content" language="unit" readonly />
       </div>
 
       <div class="col">
@@ -95,7 +96,7 @@ onMounted(load)
         </article>
 
         <button class="secondary" @click="viewLogs">{{ showLogs ? 'Hide Logs' : 'View Logs' }}</button>
-        <pre v-if="showLogs" class="logs">{{ logs }}</pre>
+        <CodeEditor v-if="showLogs" :model-value="logs" readonly autoscroll />
       </div>
     </div>
   </template>
