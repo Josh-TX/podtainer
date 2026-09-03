@@ -1,4 +1,10 @@
 <script setup>
+import { computed } from 'vue'
+import { useRoute } from 'vue-router'
+
+const route = useRoute()
+const sections = ['stacks', 'quadlets', 'systemd', 'containers']
+const activeSection = computed(() => sections.find(s => route.path.startsWith(`/${s}`)))
 </script>
 
 <template>
@@ -8,10 +14,10 @@
         <li><strong>Podtainer</strong></li>
       </ul>
       <ul>
-        <li><RouterLink to="/stacks">Stacks</RouterLink></li>
-        <li><RouterLink to="/quadlets">Quadlets</RouterLink></li>
-        <li><RouterLink to="/systemd">Systemd</RouterLink></li>
-        <li><RouterLink to="/containers">Containers</RouterLink></li>
+        <li :class="{ active: activeSection === 'stacks' }"><RouterLink to="/stacks">Stacks</RouterLink></li>
+        <li :class="{ active: activeSection === 'quadlets' }"><RouterLink to="/quadlets">Quadlets</RouterLink></li>
+        <li :class="{ active: activeSection === 'systemd' }"><RouterLink to="/systemd">Systemd</RouterLink></li>
+        <li :class="{ active: activeSection === 'containers' }"><RouterLink to="/containers">Containers</RouterLink></li>
       </ul>
     </nav>
   </header>
