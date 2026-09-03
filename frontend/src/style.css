@@ -75,8 +75,8 @@ button.danger {
 h1 .badge {
   margin-left: 0.6rem;
 }
-.badge.active, .badge.healthy, .badge.deployed { --badge-color: var(--pico-ins-color); }
-.badge.failed, .badge.unhealthy, .badge.restarting { --badge-color: var(--pico-del-color); }
+.badge.active, .badge.healthy, .badge.deployed, .badge.running { --badge-color: var(--pico-ins-color); }
+.badge.failed, .badge.unhealthy, .badge.restarting, .badge.missing { --badge-color: var(--pico-del-color); }
 .badge.drift, .badge.notdeployed, .badge.starting { --badge-color: light-dark(#9a6700, #e3b341); }
 
 .error-banner, .warn-banner {

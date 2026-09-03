@@ -28,6 +28,10 @@ function healthClass({ success, total }) {
   return 'starting'
 }
 
+function hasHealthChecks(containers) {
+  return containers.some((c) => c.health === 'healthy' || c.health === 'unhealthy')
+}
+
 async function load() {
   if (props.isNew) return
   error.value = ''
@@ -167,14 +171,14 @@ onMounted(load)
             <tr>
               <th>Name</th>
               <th>State</th>
-              <th>Health</th>
+              <th v-if="hasHealthChecks(status.podmanContainers)">Health</th>
             </tr>
           </thead>
           <tbody>
             <tr v-for="c in status.podmanContainers" :key="c.name">
               <td><RouterLink class="row-link" :to="`/containers/${encodeURIComponent(c.name)}`">{{ c.name }}</RouterLink></td>
               <td><span :class="['badge', c.state]">{{ c.state }}</span></td>
-              <td><span :class="['badge', c.health]">{{ c.health }}</span></td>
+              <td v-if="hasHealthChecks(status.podmanContainers)"><span :class="['badge', c.health]">{{ c.health }}</span></td>
             </tr>
           </tbody>
         </table>

@@ -342,6 +342,12 @@ func GetStatus(ctx context.Context, cfg *config.Config, name string) (*Status, e
 				if len(parts) == 2 && parts[1] != "" && parts[1] != "<no value>" {
 					cs.Health = parts[1]
 				}
+			} else if sub == "auto-restart" {
+				// The container is torn down between crash-loop restarts, so
+				// `podman inspect` finds nothing even though the unit is very
+				// much not idle — report the systemd-derived state instead of
+				// "unknown".
+				cs.State = "missing"
 			}
 			st.PodmanContainers = append(st.PodmanContainers, cs)
 		}
