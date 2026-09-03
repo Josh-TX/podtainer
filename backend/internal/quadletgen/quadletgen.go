@@ -148,6 +148,15 @@ func postProcessContainer(raw, stackName, serviceName string, needsNetwork bool)
 	if !uf.HasKey("Service", "Restart") {
 		uf.Set("Service", "Restart", "on-failure")
 	}
+	if !uf.HasKey("Service", "RestartSec") {
+		uf.Set("Service", "RestartSec", "5s")
+	}
+	if !uf.HasKey("Service", "RestartSteps") {
+		uf.Set("Service", "RestartSteps", "8")
+	}
+	if !uf.HasKey("Service", "RestartMaxDelaySec") {
+		uf.Set("Service", "RestartMaxDelaySec", "600s")
+	}
 
 	// Quadlet auto-generates the .wants symlink for this at generator time,
 	// so the container starts on boot without an explicit `systemctl enable`.

@@ -1,6 +1,7 @@
 <script setup>
 import { ref, onMounted } from 'vue'
 import { quadletsApi } from '../api'
+import { unitBadgeClass, restartingLabel } from '../unitBadge'
 
 const files = ref([])
 const error = ref('')
@@ -43,7 +44,7 @@ onMounted(load)
           <td><RouterLink class="row-link" :to="`/quadlets/${encodeURIComponent(f.filename)}`">{{ f.filename }}</RouterLink></td>
           <td>{{ f.type }}</td>
           <td class="muted">{{ f.stack || 'external' }}</td>
-          <td><span :class="['badge', f.active]">{{ f.active }}</span></td>
+          <td><span :class="unitBadgeClass(f)" :title="restartingLabel(f)">{{ f.active }}</span></td>
         </tr>
       </tbody>
     </table>

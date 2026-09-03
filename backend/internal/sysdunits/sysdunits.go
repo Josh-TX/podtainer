@@ -7,10 +7,16 @@ package sysdunits
 import (
 	"context"
 	"encoding/json"
+	"strconv"
 	"strings"
+	"time"
 
 	"podtainer/internal/execx"
 )
+
+// systemdTimestampLayout matches the human-readable timestamps emitted by
+// `systemctl show` (e.g. "Wed 2026-09-02 19:17:48 CDT").
+const systemdTimestampLayout = "Mon 2006-01-02 15:04:05 MST"
 
 type Unit struct {
 	Name        string `json:"name"`
@@ -19,6 +25,11 @@ type Unit struct {
 	Sub         string `json:"sub"`
 	Description string `json:"description"`
 	SourcePath  string `json:"sourcePath"`
+	NRestarts   int    `json:"nRestarts"`
+	// SinceTimestamp is when the unit's current run began (ConditionTimestamp),
+	// which stays fixed across auto-restart cycles, so it doubles as "failing since"
+	// for a unit stuck in the activating/auto-restart loop.
+	SinceTimestamp string `json:"sinceTimestamp,omitempty"`
 }
 
 type rawUnitFile struct {
@@ -44,7 +55,7 @@ func List(ctx context.Context, quadletDir string) ([]Unit, error) {
 	units := []Unit{}
 	for _, f := range files {
 		props, err := execx.Run(ctx, "systemctl", "--user", "show", f.UnitFile,
-			"--property=LoadState,ActiveState,SubState,Description,SourcePath")
+			"--property=LoadState,ActiveState,SubState,Description,SourcePath,NRestarts,ConditionTimestamp")
 		if err != nil {
 			continue
 		}
@@ -53,16 +64,30 @@ func List(ctx context.Context, quadletDir string) ([]Unit, error) {
 		if sourcePath == "" || !strings.HasPrefix(sourcePath, quadletDir) {
 			continue
 		}
+		nRestarts, _ := strconv.Atoi(vals["NRestarts"])
+		var since string
+		if t, err := time.Parse(systemdTimestampLayout, vals["ConditionTimestamp"]); err == nil {
+			since = t.Format(time.RFC3339)
+		}
 		units = append(units, Unit{
-			Name:        f.UnitFile,
-			Load:        vals["LoadState"],
-			Active:      vals["ActiveState"],
-			Sub:         vals["SubState"],
-			Description: vals["Description"],
-			SourcePath:  sourcePath,
+			Name:           f.UnitFile,
+			Load:           vals["LoadState"],
+			Active:         vals["ActiveState"],
+			Sub:            vals["SubState"],
+			Description:    vals["Description"],
+			SourcePath:     sourcePath,
+			NRestarts:      nRestarts,
+			SinceTimestamp: since,
 		})
 	}
 	return units, nil
+}
+
+// Content returns the fully-resolved unit file as systemd sees it (via
+// `systemctl cat`), which for quadlet-origin units includes the generated
+// .service file systemd actually loads, not the source .container/.network file.
+func Content(ctx context.Context, unit string) (string, error) {
+	return execx.Run(ctx, "systemctl", "--user", "cat", unit)
 }
 
 func parseProperties(s string) map[string]string {

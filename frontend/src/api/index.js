@@ -37,6 +37,8 @@ export const quadletsApi = {
 
 export const systemdApi = {
   list: () => request('/systemd'),
+  logs: (name, lines = 200) => request(`/systemd/${enc(name)}/logs?lines=${lines}`),
+  content: (name) => request(`/systemd/${enc(name)}/content`),
 }
 
 export const containersApi = {

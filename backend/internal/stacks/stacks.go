@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -18,14 +19,35 @@ import (
 	"podtainer/internal/quadlets"
 )
 
+// systemdTimestampLayout matches the human-readable timestamps emitted by
+// `systemctl show` (e.g. "Wed 2026-09-02 19:17:48 CDT").
+const systemdTimestampLayout = "Mon 2006-01-02 15:04:05 MST"
+
+func parseProperties(s string) map[string]string {
+	vals := make(map[string]string)
+	for _, line := range strings.Split(s, "\n") {
+		key, value, ok := strings.Cut(line, "=")
+		if ok {
+			vals[key] = value
+		}
+	}
+	return vals
+}
+
 type QuadletUnitStatus struct {
-	Filename string `json:"filename"`
-	Active   string `json:"active"`
+	Filename       string `json:"filename"`
+	Active         string `json:"active"`
+	Sub            string `json:"sub"`
+	NRestarts      int    `json:"nRestarts"`
+	SinceTimestamp string `json:"sinceTimestamp,omitempty"`
 }
 
 type SystemdUnitStatus struct {
-	Unit   string `json:"unit"`
-	Active string `json:"active"`
+	Unit           string `json:"unit"`
+	Active         string `json:"active"`
+	Sub            string `json:"sub"`
+	NRestarts      int    `json:"nRestarts"`
+	SinceTimestamp string `json:"sinceTimestamp,omitempty"`
 }
 
 type ContainerStatus struct {
@@ -293,11 +315,20 @@ func GetStatus(ctx context.Context, cfg *config.Config, name string) (*Status, e
 	for _, filename := range filenames {
 		unit := quadlets.UnitName(filename)
 		active := "unknown"
-		if out, err := execx.Run(ctx, "systemctl", "--user", "show", unit, "--property=ActiveState", "--value"); err == nil {
-			active = strings.TrimSpace(out)
+		var sub, since string
+		var nRestarts int
+		if out, err := execx.Run(ctx, "systemctl", "--user", "show", unit,
+			"--property=ActiveState,SubState,NRestarts,ConditionTimestamp"); err == nil {
+			vals := parseProperties(out)
+			active = vals["ActiveState"]
+			sub = vals["SubState"]
+			nRestarts, _ = strconv.Atoi(vals["NRestarts"])
+			if t, err := time.Parse(systemdTimestampLayout, vals["ConditionTimestamp"]); err == nil {
+				since = t.Format(time.RFC3339)
+			}
 		}
-		st.QuadletUnits = append(st.QuadletUnits, QuadletUnitStatus{Filename: filename, Active: active})
-		st.SystemdUnits = append(st.SystemdUnits, SystemdUnitStatus{Unit: unit, Active: active})
+		st.QuadletUnits = append(st.QuadletUnits, QuadletUnitStatus{Filename: filename, Active: active, Sub: sub, NRestarts: nRestarts, SinceTimestamp: since})
+		st.SystemdUnits = append(st.SystemdUnits, SystemdUnitStatus{Unit: unit, Active: active, Sub: sub, NRestarts: nRestarts, SinceTimestamp: since})
 
 		if strings.HasSuffix(filename, ".container") {
 			container := strings.TrimSuffix(filename, ".container")

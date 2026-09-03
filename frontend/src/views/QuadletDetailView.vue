@@ -2,6 +2,7 @@
 import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { quadletsApi, systemdApi, containersApi } from '../api'
+import { unitBadgeClass, restartingLabel } from '../unitBadge'
 
 const props = defineProps({ filename: { type: String, required: true } })
 const router = useRouter()
@@ -142,7 +143,7 @@ onMounted(load)
           <p style="margin-bottom: 0.25rem">
             Systemd unit:
             <template v-if="systemdUnit">
-              <span :class="['badge', systemdUnit.active]">{{ systemdUnit.active }}</span>
+              <span :class="unitBadgeClass(systemdUnit)" :title="restartingLabel(systemdUnit)">{{ systemdUnit.active }}</span>
               <RouterLink :to="`/systemd/${encodeURIComponent(systemdUnit.name)}`">{{ systemdUnit.name }}</RouterLink>
             </template>
             <span v-else class="muted">Not found.</span>

@@ -34,6 +34,8 @@ func NewMux(cfg *config.Config) *http.ServeMux {
 	mux.HandleFunc("GET /api/quadlets/{filename}/logs", quadletLogs())
 
 	mux.HandleFunc("GET /api/systemd", listSystemd(cfg))
+	mux.HandleFunc("GET /api/systemd/{name}/logs", systemdLogs())
+	mux.HandleFunc("GET /api/systemd/{name}/content", systemdContent())
 
 	mux.HandleFunc("GET /api/containers", listContainers())
 	mux.HandleFunc("GET /api/containers/{id}/stats", containerStats())
@@ -259,6 +261,28 @@ func listSystemd(cfg *config.Config) http.HandlerFunc {
 			return
 		}
 		writeJSON(w, units)
+	}
+}
+
+func systemdLogs() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		out, err := podmanx.UnitLogs(r.Context(), r.PathValue("name"), linesParam(r))
+		if err != nil {
+			writeErr(w, 500, err)
+			return
+		}
+		writeJSON(w, map[string]string{"logs": out})
+	}
+}
+
+func systemdContent() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		out, err := sysdunits.Content(r.Context(), r.PathValue("name"))
+		if err != nil {
+			writeErr(w, 500, err)
+			return
+		}
+		writeJSON(w, map[string]string{"content": out})
 	}
 }
 

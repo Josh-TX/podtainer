@@ -2,6 +2,7 @@
 import { ref, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { stacksApi } from '../api'
+import { unitBadgeClass, restartingLabel } from '../unitBadge'
 
 const props = defineProps({ isNew: { type: Boolean, default: false } })
 const route = useRoute()
@@ -139,7 +140,7 @@ onMounted(load)
           <tbody>
             <tr v-for="u in status.quadletUnits" :key="u.filename">
               <td><RouterLink class="row-link" :to="`/quadlets/${encodeURIComponent(u.filename)}`">{{ u.filename }}</RouterLink></td>
-              <td><span :class="['badge', u.active]">{{ u.active }}</span></td>
+              <td><span :class="unitBadgeClass(u)" :title="restartingLabel(u)">{{ u.active }}</span></td>
             </tr>
           </tbody>
         </table>
@@ -155,7 +156,7 @@ onMounted(load)
           <tbody>
             <tr v-for="u in status.systemdUnits" :key="u.unit">
               <td><RouterLink class="row-link" :to="`/systemd/${encodeURIComponent(u.unit)}`">{{ u.unit }}</RouterLink></td>
-              <td><span :class="['badge', u.active]">{{ u.active }}</span></td>
+              <td><span :class="unitBadgeClass(u)" :title="restartingLabel(u)">{{ u.active }}</span></td>
             </tr>
           </tbody>
         </table>

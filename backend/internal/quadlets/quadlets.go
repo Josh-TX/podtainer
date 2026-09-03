@@ -6,16 +6,25 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
+	"time"
 
 	"podtainer/internal/execx"
 )
 
+// systemdTimestampLayout matches the human-readable timestamps emitted by
+// `systemctl show` (e.g. "Wed 2026-09-02 19:17:48 CDT").
+const systemdTimestampLayout = "Mon 2006-01-02 15:04:05 MST"
+
 type File struct {
-	Filename string `json:"filename"`
-	Type     string `json:"type"`  // container, network, volume, target, or other
-	Stack    string `json:"stack"` // owning stack name, "" if external/unmanaged
-	Active   string `json:"active"`
+	Filename       string `json:"filename"`
+	Type           string `json:"type"`  // container, network, volume, target, or other
+	Stack          string `json:"stack"` // owning stack name, "" if external/unmanaged
+	Active         string `json:"active"`
+	Sub            string `json:"sub"`
+	NRestarts      int    `json:"nRestarts"`
+	SinceTimestamp string `json:"sinceTimestamp,omitempty"`
 }
 
 // UnitName maps a quadlet-generated file to the systemd unit name that
@@ -85,8 +94,15 @@ func List(ctx context.Context, quadletDir string) ([]File, error) {
 			f.Stack = stackFromLabel(string(raw))
 		}
 
-		if out, err := execx.Run(ctx, "systemctl", "--user", "show", UnitName(e.Name()), "--property=ActiveState", "--value"); err == nil {
-			f.Active = strings.TrimSpace(out)
+		if out, err := execx.Run(ctx, "systemctl", "--user", "show", UnitName(e.Name()),
+			"--property=ActiveState,SubState,NRestarts,ConditionTimestamp"); err == nil {
+			vals := parseProperties(out)
+			f.Active = vals["ActiveState"]
+			f.Sub = vals["SubState"]
+			f.NRestarts, _ = strconv.Atoi(vals["NRestarts"])
+			if t, err := time.Parse(systemdTimestampLayout, vals["ConditionTimestamp"]); err == nil {
+				f.SinceTimestamp = t.Format(time.RFC3339)
+			}
 		}
 
 		files = append(files, f)
@@ -165,4 +181,15 @@ func Stop(ctx context.Context, filename string) error {
 func Restart(ctx context.Context, filename string) error {
 	_, err := execx.Run(ctx, "systemctl", "--user", "restart", UnitName(filename))
 	return err
+}
+
+func parseProperties(s string) map[string]string {
+	vals := make(map[string]string)
+	for _, line := range strings.Split(s, "\n") {
+		key, value, ok := strings.Cut(line, "=")
+		if ok {
+			vals[key] = value
+		}
+	}
+	return vals
 }
