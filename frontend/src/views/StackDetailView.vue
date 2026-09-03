@@ -10,6 +10,7 @@ const router = useRouter()
 
 const name = ref(props.isNew ? '' : route.params.name)
 const content = ref(props.isNew ? 'services:\n  web:\n    image: docker.io/library/nginx:latest\n    ports:\n      - "8080:80"\n' : '')
+const path = ref('')
 const status = ref(null)
 const error = ref('')
 const busy = ref(false)
@@ -39,6 +40,7 @@ async function load() {
   try {
     const data = await stacksApi.get(name.value)
     content.value = data.content
+    path.value = data.path
     status.value = data.status
   } catch (e) {
     error.value = e.message
@@ -96,7 +98,7 @@ onMounted(load)
 
 <template>
   <div class="page-header">
-    <h1>
+    <h1 style="margin-bottom: 0.5rem">
       {{ isNew ? 'New Stack' : name }}
       <span v-if="!isNew && status && !status.deployed" class="badge notdeployed">Not Deployed</span>
       <span v-else-if="!isNew && status && status.drift" class="badge drift">Needs Redeploy</span>
@@ -124,12 +126,11 @@ onMounted(load)
       <input v-model="name" placeholder="mystack" />
     </label>
 
+    <p v-if="!isNew" class="muted" style="margin-bottom: 0.25rem">{{ path }}</p>
+
     <div class="stack-columns">
       <div class="col">
-        <label>
-          docker-compose.yml
-          <textarea v-model="content" rows="16"></textarea>
-        </label>
+        <textarea v-model="content" rows="16"></textarea>
       </div>
 
       <div class="col" v-if="!isNew && status">

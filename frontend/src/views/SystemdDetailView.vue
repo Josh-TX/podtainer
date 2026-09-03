@@ -1,12 +1,14 @@
 <script setup>
 import { ref, onMounted } from 'vue'
-import { systemdApi } from '../api'
-import { unitBadgeClass, restartingLabel, isRestarting } from '../unitBadge'
+import { systemdApi, quadletsApi, containersApi } from '../api'
+import { unitBadgeClass, restartingLabel } from '../unitBadge'
 
 const props = defineProps({ name: { type: String, required: true } })
 
 const unit = ref(null)
 const content = ref('')
+const meta = ref(null)
+const container = ref(null)
 const error = ref('')
 const loading = ref(true)
 const logs = ref('')
@@ -19,8 +21,15 @@ async function load() {
     const units = await systemdApi.list()
     unit.value = units.find((u) => u.name === props.name) || null
     if (unit.value) {
-      const data = await systemdApi.content(props.name)
+      const [data, quadlets, containers] = await Promise.all([
+        systemdApi.content(props.name),
+        quadletsApi.list(),
+        containersApi.list(),
+      ])
       content.value = data.content
+      const filename = unit.value.sourcePath.split('/').pop()
+      meta.value = quadlets.find((f) => f.filename === filename) || null
+      container.value = containers.find((c) => c.systemdUnit === props.name) || null
     }
   } catch (e) {
     error.value = e.message
@@ -45,8 +54,10 @@ onMounted(load)
 
 <template>
   <div class="page-header">
-    <h1>{{ name }}</h1>
-    <RouterLink to="/systemd" role="button" class="secondary">Back</RouterLink>
+    <h1 style="margin-bottom: 0.5rem">
+      {{ name }}
+      <span v-if="unit" :class="unitBadgeClass(unit)" :title="restartingLabel(unit)">{{ unit.active }}</span>
+    </h1>
   </div>
 
   <div v-if="error" class="error-banner">{{ error }}</div>
@@ -54,20 +65,38 @@ onMounted(load)
   <p v-else-if="!unit" class="muted">Unit not found.</p>
 
   <template v-else>
-    <div class="toolbar">
-      <span :class="unitBadgeClass(unit)">{{ unit.active }}</span>
-      <span class="muted">{{ unit.sub }}</span>
-      <span v-if="isRestarting(unit)" class="muted">{{ restartingLabel(unit) }}</span>
+    <p class="muted" style="margin-bottom: 0.25rem">{{ unit.fragmentPath }}</p>
+
+    <div class="stack-columns">
+      <div class="col">
+        <pre class="logs">{{ content }}</pre>
+      </div>
+
+      <div class="col">
+        <article>
+          <p v-if="meta?.stack" style="margin-bottom: 0.25rem">
+            Stack: <RouterLink :to="`/stacks/${encodeURIComponent(meta.stack)}`">{{ meta.stack }}</RouterLink>
+          </p>
+
+          <p style="margin-bottom: 0.25rem">
+            Quadlet file:
+            <RouterLink v-if="meta" :to="`/quadlets/${encodeURIComponent(meta.filename)}`">{{ meta.filename }}</RouterLink>
+            <span v-else class="muted">Not found.</span>
+          </p>
+
+          <p v-if="meta?.type === 'container'" style="margin-bottom: 0">
+            Podman container:
+            <template v-if="container">
+              <span :class="['badge', container.state]">{{ container.state }}</span>
+              <RouterLink :to="`/containers/${encodeURIComponent(container.id)}`">{{ container.names[0] }}</RouterLink>
+            </template>
+            <span v-else class="muted">No running container.</span>
+          </p>
+        </article>
+
+        <button class="secondary" @click="viewLogs">{{ showLogs ? 'Hide Logs' : 'View Logs' }}</button>
+        <pre v-if="showLogs" class="logs">{{ logs }}</pre>
+      </div>
     </div>
-    <p><span class="muted">Description:</span> {{ unit.description || '—' }}</p>
-    <p><span class="muted">Source path:</span> {{ unit.sourcePath || '—' }}</p>
-
-    <label>
-      Unit file
-      <pre class="logs">{{ content }}</pre>
-    </label>
-
-    <button class="secondary" @click="viewLogs">{{ showLogs ? 'Hide Logs' : 'View Logs' }}</button>
-    <pre v-if="showLogs" class="logs">{{ logs }}</pre>
   </template>
 </template>

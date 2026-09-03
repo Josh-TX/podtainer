@@ -25,7 +25,12 @@ type Unit struct {
 	Sub         string `json:"sub"`
 	Description string `json:"description"`
 	SourcePath  string `json:"sourcePath"`
-	NRestarts   int    `json:"nRestarts"`
+	// FragmentPath is the actual unit file systemd loaded, which for
+	// quadlet-generated units lives under the generator's runtime directory
+	// (e.g. /run/user/<uid>/systemd/generator/), distinct from SourcePath
+	// (the quadlet file that produced it).
+	FragmentPath string `json:"fragmentPath"`
+	NRestarts    int    `json:"nRestarts"`
 	// SinceTimestamp is when the unit's current run began (ConditionTimestamp),
 	// which stays fixed across auto-restart cycles, so it doubles as "failing since"
 	// for a unit stuck in the activating/auto-restart loop.
@@ -55,7 +60,7 @@ func List(ctx context.Context, quadletDir string) ([]Unit, error) {
 	units := []Unit{}
 	for _, f := range files {
 		props, err := execx.Run(ctx, "systemctl", "--user", "show", f.UnitFile,
-			"--property=LoadState,ActiveState,SubState,Description,SourcePath,NRestarts,ConditionTimestamp")
+			"--property=LoadState,ActiveState,SubState,Description,SourcePath,FragmentPath,NRestarts,ConditionTimestamp")
 		if err != nil {
 			continue
 		}
@@ -76,6 +81,7 @@ func List(ctx context.Context, quadletDir string) ([]Unit, error) {
 			Sub:            vals["SubState"],
 			Description:    vals["Description"],
 			SourcePath:     sourcePath,
+			FragmentPath:   vals["FragmentPath"],
 			NRestarts:      nRestarts,
 			SinceTimestamp: since,
 		})

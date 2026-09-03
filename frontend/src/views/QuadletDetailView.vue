@@ -8,6 +8,7 @@ const props = defineProps({ filename: { type: String, required: true } })
 const router = useRouter()
 
 const content = ref('')
+const path = ref('')
 const meta = ref(null)
 const systemdUnit = ref(null)
 const container = ref(null)
@@ -45,6 +46,7 @@ async function load() {
       containersApi.list(),
     ])
     content.value = data.content
+    path.value = data.path
     meta.value = list.find((f) => f.filename === props.filename) || null
     systemdUnit.value = units.find((u) => u.name === unitName.value) || null
     container.value = containers.find((c) => c.systemdUnit === unitName.value) || null
@@ -107,7 +109,7 @@ onMounted(load)
 
 <template>
   <div class="page-header">
-    <h1>{{ filename }}</h1>
+    <h1 style="margin-bottom: 0.5rem">{{ filename }}</h1>
     <div class="toolbar" style="margin-bottom: 0">
       <button :disabled="busy" @click="save">Save</button>
       <details class="dropdown">
@@ -126,12 +128,11 @@ onMounted(load)
   <p v-if="loading" aria-busy="true">Loading…</p>
 
   <template v-else>
+    <p class="muted" style="margin-bottom: 0.25rem">{{ path }}</p>
+
     <div class="stack-columns">
       <div class="col">
-        <label>
-          Unit file
-          <textarea v-model="content" rows="16"></textarea>
-        </label>
+        <textarea v-model="content" rows="16"></textarea>
       </div>
 
       <div class="col">

@@ -5,6 +5,7 @@ package api
 import (
 	"encoding/json"
 	"net/http"
+	"path/filepath"
 	"strconv"
 
 	"podtainer/internal/config"
@@ -99,7 +100,8 @@ func getStack(cfg *config.Config) http.HandlerFunc {
 			writeErr(w, 500, err)
 			return
 		}
-		writeJSON(w, map[string]any{"name": name, "content": content, "status": status})
+		path := filepath.Join(cfg.StacksDir, name+".yml")
+		writeJSON(w, map[string]any{"name": name, "content": content, "status": status, "path": path})
 	}
 }
 
@@ -173,12 +175,13 @@ func listQuadlets(cfg *config.Config) http.HandlerFunc {
 
 func getQuadlet(cfg *config.Config) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		content, err := quadlets.Read(cfg.QuadletDir, r.PathValue("filename"))
+		filename := r.PathValue("filename")
+		content, err := quadlets.Read(cfg.QuadletDir, filename)
 		if err != nil {
 			writeErr(w, 404, err)
 			return
 		}
-		writeJSON(w, map[string]string{"content": content})
+		writeJSON(w, map[string]string{"content": content, "path": filepath.Join(cfg.QuadletDir, filename)})
 	}
 }
 
