@@ -1,5 +1,5 @@
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, watch, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { stacksApi } from '../api'
 import { unitBadgeClass, restartingLabel } from '../unitBadge'
@@ -9,13 +9,13 @@ const props = defineProps({ isNew: { type: Boolean, default: false } })
 const route = useRoute()
 const router = useRouter()
 
-const name = ref(props.isNew ? '' : route.params.name)
-const content = ref(props.isNew ? 'services:\n  web:\n    image: docker.io/library/nginx:latest\n    ports:\n      - "8080:80"\n' : '')
+const name = ref('')
+const content = ref('')
 const path = ref('')
 const status = ref(null)
 const error = ref('')
 const busy = ref(false)
-const loading = ref(!props.isNew)
+const loading = ref(false)
 let firstLoad = true
 
 function healthRatio(containers) {
@@ -50,6 +50,22 @@ async function load() {
     firstLoad = false
   }
 }
+
+// /stacks/new and /stacks/:name both render this same component, so Vue
+// Router reuses the instance instead of remounting when navigating between
+// them (e.g. right after creating a stack) — reinitialize state and reload.
+function resetForRoute() {
+  name.value = props.isNew ? '' : route.params.name
+  content.value = props.isNew ? 'services:\n  web:\n    image: docker.io/library/nginx:latest\n    ports:\n      - "8080:80"\n' : ''
+  path.value = ''
+  status.value = null
+  error.value = ''
+  loading.value = !props.isNew
+  firstLoad = true
+  load()
+}
+
+watch(() => [props.isNew, route.params.name], resetForRoute)
 
 async function saveAndDeploy(force = false) {
   error.value = ''
@@ -94,7 +110,7 @@ async function remove() {
   }
 }
 
-onMounted(load)
+onMounted(resetForRoute)
 </script>
 
 <template>
@@ -124,7 +140,7 @@ onMounted(load)
   <template v-else>
     <label v-if="isNew">
       Stack name
-      <input v-model="name" placeholder="mystack" />
+      <input v-model="name" />
     </label>
 
     <p v-if="!isNew" class="muted" style="margin-bottom: 0.25rem">{{ path }}</p>

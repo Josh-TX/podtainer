@@ -126,6 +126,11 @@ func installedFiles(cfg *config.Config, name string) (map[string]string, error) 
 // prefixed files: removed files are stopped+disabled+deleted, new/changed
 // ones are written and (re)started. force rewrites+restarts every unit
 // unconditionally even if content is unchanged.
+//
+// Once the compose file and quadlet units are committed to disk, a unit
+// that fails to start/restart (e.g. a port conflict) does not abort the
+// deploy: the stack itself was created successfully, and its per-unit
+// status is visible on the stack details page.
 func Deploy(ctx context.Context, cfg *config.Config, name, content string, force bool) error {
 	if err := composeutil.ValidateName(name); err != nil {
 		return err
@@ -189,9 +194,7 @@ func Deploy(ctx context.Context, cfg *config.Config, name, content string, force
 		if !strings.HasSuffix(u.Filename, ".container") {
 			continue
 		}
-		if _, err := execx.Run(ctx, "systemctl", "--user", "start", quadlets.UnitName(u.Filename)); err != nil {
-			return err
-		}
+		execx.Run(ctx, "systemctl", "--user", "start", quadlets.UnitName(u.Filename))
 	}
 
 	// Units that already existed and merely changed content need an
@@ -199,9 +202,7 @@ func Deploy(ctx context.Context, cfg *config.Config, name, content string, force
 	// won't pick up the new file.
 	for _, filename := range toWrite {
 		if _, existed := existing[filename]; existed && strings.HasSuffix(filename, ".container") {
-			if _, err := execx.Run(ctx, "systemctl", "--user", "restart", quadlets.UnitName(filename)); err != nil {
-				return err
-			}
+			execx.Run(ctx, "systemctl", "--user", "restart", quadlets.UnitName(filename))
 		}
 	}
 
