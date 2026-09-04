@@ -7,11 +7,15 @@ package sysdunits
 import (
 	"context"
 	"encoding/json"
+	"os"
+	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
 
 	"podtainer/internal/execx"
+	"podtainer/internal/quadlets"
 )
 
 // systemdTimestampLayout matches the human-readable timestamps emitted by
@@ -41,25 +45,64 @@ type rawUnitFile struct {
 	UnitFile string `json:"unit_file"`
 }
 
+type rawUnit struct {
+	Unit string `json:"unit"`
+}
+
 // List returns every systemd --user unit whose SourcePath lives under
-// quadletDir, i.e. every quadlet-origin unit on the system. It uses
-// list-unit-files rather than list-units so units that were generated but
-// never started or enabled (and so never loaded into the manager) still show
-// up.
+// quadletDir, i.e. every quadlet-origin unit on the system, unioned with
+// currently-loaded units that match a quadlet file's expected unit name.
+//
+// list-unit-files alone would miss "orphaned" units: ones systemd still has
+// loaded and running (or failed) in memory even though their backing file is
+// gone, e.g. because quadlet-generator failed to regenerate it on the last
+// daemon-reload (a syntax error in the source file, most commonly) without
+// stopping the previously-running instance. list-units catches those, but
+// also includes every other unit on the system, so orphan candidates are
+// only admitted if their name matches a quadlet file currently present in
+// quadletDir - systemd clears SourcePath/FragmentPath for them once orphaned,
+// so that's the only way to attribute them back to a quadlet file.
 func List(ctx context.Context, quadletDir string) ([]Unit, error) {
-	out, err := execx.Run(ctx, "systemctl", "--user", "list-unit-files", "--all", "--output=json", "--no-pager")
+	fileOut, err := execx.Run(ctx, "systemctl", "--user", "list-unit-files", "--all", "--output=json", "--no-pager")
 	if err != nil {
 		return nil, err
 	}
-
 	var files []rawUnitFile
-	if err := json.Unmarshal([]byte(out), &files); err != nil {
+	if err := json.Unmarshal([]byte(fileOut), &files); err != nil {
 		return nil, err
 	}
 
-	units := []Unit{}
+	expected := map[string]string{} // unit name -> quadlet filename
+	if entries, err := os.ReadDir(quadletDir); err == nil {
+		for _, e := range entries {
+			if !e.IsDir() {
+				expected[quadlets.UnitName(e.Name())] = e.Name()
+			}
+		}
+	}
+
+	loadedOut, err := execx.Run(ctx, "systemctl", "--user", "list-units", "--all", "--output=json", "--no-pager")
+	if err != nil {
+		return nil, err
+	}
+	var loaded []rawUnit
+	if err := json.Unmarshal([]byte(loadedOut), &loaded); err != nil {
+		return nil, err
+	}
+
+	candidates := map[string]bool{}
 	for _, f := range files {
-		props, err := execx.Run(ctx, "systemctl", "--user", "show", f.UnitFile,
+		candidates[f.UnitFile] = true
+	}
+	for _, u := range loaded {
+		if _, ok := expected[u.Unit]; ok {
+			candidates[u.Unit] = true
+		}
+	}
+
+	units := []Unit{}
+	for name := range candidates {
+		props, err := execx.Run(ctx, "systemctl", "--user", "show", name,
 			"--property=LoadState,ActiveState,SubState,Description,SourcePath,FragmentPath,NRestarts,ConditionTimestamp")
 		if err != nil {
 			continue
@@ -67,7 +110,11 @@ func List(ctx context.Context, quadletDir string) ([]Unit, error) {
 		vals := parseProperties(props)
 		sourcePath := vals["SourcePath"]
 		if sourcePath == "" || !strings.HasPrefix(sourcePath, quadletDir) {
-			continue
+			filename, ok := expected[name]
+			if !ok {
+				continue
+			}
+			sourcePath = filepath.Join(quadletDir, filename)
 		}
 		nRestarts, _ := strconv.Atoi(vals["NRestarts"])
 		var since string
@@ -75,7 +122,7 @@ func List(ctx context.Context, quadletDir string) ([]Unit, error) {
 			since = t.Format(time.RFC3339)
 		}
 		units = append(units, Unit{
-			Name:           f.UnitFile,
+			Name:           name,
 			Load:           vals["LoadState"],
 			Active:         vals["ActiveState"],
 			Sub:            vals["SubState"],
@@ -86,6 +133,7 @@ func List(ctx context.Context, quadletDir string) ([]Unit, error) {
 			SinceTimestamp: since,
 		})
 	}
+	sort.Slice(units, func(i, j int) bool { return units[i].Name < units[j].Name })
 	return units, nil
 }
 

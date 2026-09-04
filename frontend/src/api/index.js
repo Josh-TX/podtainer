@@ -33,6 +33,7 @@ export const quadletsApi = {
   stop: (filename) => request(`/quadlets/${enc(filename)}/stop`, { method: 'POST' }),
   restart: (filename) => request(`/quadlets/${enc(filename)}/restart`, { method: 'POST' }),
   logs: (filename, lines = 200) => request(`/quadlets/${enc(filename)}/logs?lines=${lines}`),
+  generatorLogs: (lines = 200) => request(`/quadlets/generator-logs?lines=${lines}`),
 }
 
 export const systemdApi = {

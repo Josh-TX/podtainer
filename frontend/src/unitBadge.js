@@ -5,8 +5,27 @@ export function isRestarting(u) {
   return u.sub === 'auto-restart'
 }
 
+// An orphaned unit is one systemd is still running (or the run just failed)
+// even though it no longer has a backing file, e.g. because the quadlet
+// generator failed to regenerate it on the last daemon-reload (a syntax
+// error in the source file, most commonly).
+export function isOrphaned(u) {
+  return u.load === 'not-found' && u.active !== 'inactive'
+}
+
+export function unitStatusLabel(u) {
+  return isOrphaned(u) ? 'orphaned' : u.active
+}
+
 export function unitBadgeClass(u) {
-  return ['badge', u.active, isRestarting(u) ? 'restarting' : '']
+  return ['badge', isOrphaned(u) ? 'orphaned' : u.active, isRestarting(u) ? 'restarting' : '']
+}
+
+export function statusTitle(u) {
+  if (isOrphaned(u)) {
+    return 'This unit has no backing file (its quadlet source failed to regenerate it, e.g. after a syntax error) but is still running from before. Fix the source file and reload, or stop it manually.'
+  }
+  return restartingLabel(u)
 }
 
 export function restartingLabel(u) {

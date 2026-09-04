@@ -3,9 +3,13 @@
 package quadlets
 
 import (
+	"bytes"
 	"context"
+	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -21,6 +25,7 @@ type File struct {
 	Filename       string `json:"filename"`
 	Type           string `json:"type"`  // container, network, volume, target, or other
 	Stack          string `json:"stack"` // owning stack name, "" if external/unmanaged
+	Load           string `json:"load"`
 	Active         string `json:"active"`
 	Sub            string `json:"sub"`
 	NRestarts      int    `json:"nRestarts"`
@@ -95,8 +100,9 @@ func List(ctx context.Context, quadletDir string) ([]File, error) {
 		}
 
 		if out, err := execx.Run(ctx, "systemctl", "--user", "show", UnitName(e.Name()),
-			"--property=ActiveState,SubState,NRestarts,ConditionTimestamp"); err == nil {
+			"--property=LoadState,ActiveState,SubState,NRestarts,ConditionTimestamp"); err == nil {
 			vals := parseProperties(out)
+			f.Load = vals["LoadState"]
 			f.Active = vals["ActiveState"]
 			f.Sub = vals["SubState"]
 			f.NRestarts, _ = strconv.Atoi(vals["NRestarts"])
@@ -116,6 +122,98 @@ func Read(quadletDir, filename string) (string, error) {
 		return "", err
 	}
 	return string(b), nil
+}
+
+// quadletBinaryPaths are the known locations of podman's quadlet generator
+// binary, which isn't normally on $PATH.
+var quadletBinaryPaths = []string{
+	"/usr/lib/podman/quadlet",
+	"/usr/libexec/podman/quadlet",
+}
+
+func findQuadletBinary() string {
+	if p, err := exec.LookPath("quadlet"); err == nil {
+		return p
+	}
+	for _, p := range quadletBinaryPaths {
+		if _, err := os.Stat(p); err == nil {
+			return p
+		}
+	}
+	return ""
+}
+
+// The quadlet generator reports a bad file in one of two forms: a syntax
+// error caught while parsing it (keyed by full path), or a semantic error
+// caught while converting it, e.g. an unresolvable Network= reference
+// (keyed by bare filename).
+var errorLoadingRe = regexp.MustCompile(`error loading "([^"]+)", (.+)`)
+var errorConvertingRe = regexp.MustCompile(`converting "([^"]+)": (.+)`)
+
+// Validate runs the real quadlet generator against content as if it were
+// filename's saved content, without touching /run or systemd state, so a
+// syntax error can be caught before Write() corrupts the live quadlet
+// directory (daemon-reload alone exits 0 even when the generator fails to
+// parse a file). The rest of quadletDir is copied in as-is so cross-file
+// references like Network=foo.network still resolve during validation.
+//
+// If the generator binary can't be found, validation is skipped rather than
+// blocking the save, since its install path varies by distro.
+func Validate(ctx context.Context, quadletDir, filename, content string) error {
+	bin := findQuadletBinary()
+	if bin == "" {
+		return nil
+	}
+
+	tmp, err := os.MkdirTemp("", "podtainer-quadlet-validate")
+	if err != nil {
+		return err
+	}
+	defer os.RemoveAll(tmp)
+
+	systemdDir := filepath.Join(tmp, "containers", "systemd")
+	if err := os.MkdirAll(systemdDir, 0o755); err != nil {
+		return err
+	}
+
+	entries, err := os.ReadDir(quadletDir)
+	if err != nil && !os.IsNotExist(err) {
+		return err
+	}
+	for _, e := range entries {
+		if e.IsDir() || e.Name() == filename {
+			continue
+		}
+		b, err := os.ReadFile(filepath.Join(quadletDir, e.Name()))
+		if err != nil {
+			continue
+		}
+		if err := os.WriteFile(filepath.Join(systemdDir, e.Name()), b, 0o644); err != nil {
+			return err
+		}
+	}
+	target := filepath.Join(systemdDir, filename)
+	if err := os.WriteFile(target, []byte(content), 0o644); err != nil {
+		return err
+	}
+
+	cmd := exec.CommandContext(ctx, bin, "-dryrun", "-user")
+	cmd.Env = append(os.Environ(), "XDG_CONFIG_HOME="+tmp)
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+	if err := cmd.Run(); err == nil {
+		return nil
+	}
+
+	for _, line := range strings.Split(stderr.String(), "\n") {
+		if m := errorLoadingRe.FindStringSubmatch(line); m != nil && m[1] == target {
+			return fmt.Errorf("%s", m[2])
+		}
+		if m := errorConvertingRe.FindStringSubmatch(line); m != nil && m[1] == filename {
+			return fmt.Errorf("%s", m[2])
+		}
+	}
+	return fmt.Errorf("quadlet validation failed: %s", strings.TrimSpace(stderr.String()))
 }
 
 // Write overwrites a quadlet file's raw content and reloads systemd so the

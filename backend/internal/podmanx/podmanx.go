@@ -106,6 +106,18 @@ func UnitLogs(ctx context.Context, unit string, lines int) (string, error) {
 	return execx.RunLong(ctx, 15*time.Second, "journalctl", "--user", "-u", unit, "--no-pager", "-n", strconv.Itoa(lines), "--output=short-iso")
 }
 
+// GeneratorLogs fetches the last n lines logged by podman's quadlet
+// generator (which runs on every `systemctl --user daemon-reload`, e.g.
+// reporting a quadlet file it failed to parse). These aren't tied to any
+// single unit, so they're filtered by the generator's process name
+// (_COMM=podman-user-gen) rather than -u.
+func GeneratorLogs(ctx context.Context, lines int) (string, error) {
+	if lines <= 0 {
+		lines = 200
+	}
+	return execx.RunLong(ctx, 15*time.Second, "journalctl", "--user", "_COMM=podman-user-gen", "--no-pager", "-n", strconv.Itoa(lines), "--output=short-iso")
+}
+
 // ContainerLogs fetches the last n lines directly from podman, which works
 // regardless of the container's configured log driver.
 func ContainerLogs(ctx context.Context, nameOrID string, lines int) (string, error) {

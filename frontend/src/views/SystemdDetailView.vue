@@ -1,7 +1,7 @@
 <script setup>
 import { ref, onMounted } from 'vue'
 import { systemdApi, quadletsApi, containersApi } from '../api'
-import { unitBadgeClass, restartingLabel } from '../unitBadge'
+import { unitBadgeClass, unitStatusLabel, statusTitle, isOrphaned } from '../unitBadge'
 import CodeEditor from '../components/CodeEditor.vue'
 
 const props = defineProps({ name: { type: String, required: true } })
@@ -22,12 +22,13 @@ async function load() {
     const units = await systemdApi.list()
     unit.value = units.find((u) => u.name === props.name) || null
     if (unit.value) {
+      const orphaned = isOrphaned(unit.value)
       const [data, quadlets, containers] = await Promise.all([
-        systemdApi.content(props.name),
+        orphaned ? Promise.resolve(null) : systemdApi.content(props.name),
         quadletsApi.list(),
         containersApi.list(),
       ])
-      content.value = data.content
+      content.value = data ? data.content : ''
       const filename = unit.value.sourcePath.split('/').pop()
       meta.value = quadlets.find((f) => f.filename === filename) || null
       container.value = containers.find((c) => c.systemdUnit === props.name) || null
@@ -57,7 +58,7 @@ onMounted(load)
   <div class="page-header">
     <h1 style="margin-bottom: 0.5rem">
       {{ name }}
-      <span v-if="unit" :class="unitBadgeClass(unit)" :title="restartingLabel(unit)">{{ unit.active }}</span>
+      <span v-if="unit" :class="unitBadgeClass(unit)" :title="statusTitle(unit)">{{ unitStatusLabel(unit) }}</span>
     </h1>
   </div>
 
@@ -66,11 +67,15 @@ onMounted(load)
   <p v-else-if="!unit" class="muted">Unit not found.</p>
 
   <template v-else>
-    <p class="muted" style="margin-bottom: 0.25rem">{{ unit.fragmentPath }}</p>
+    <p v-if="isOrphaned(unit)" class="muted" style="margin-bottom: 0.25rem">
+      No backing file — this unit's quadlet source failed to regenerate it (e.g. a syntax error), but it's still running from before.
+    </p>
+    <p v-else class="muted" style="margin-bottom: 0.25rem">{{ unit.fragmentPath }}</p>
 
     <div class="stack-columns">
       <div class="col">
-        <CodeEditor :model-value="content" language="unit" readonly />
+        <p v-if="isOrphaned(unit)" class="muted">No unit file to display.</p>
+        <CodeEditor v-else :model-value="content" language="unit" readonly />
       </div>
 
       <div class="col">

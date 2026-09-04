@@ -1,7 +1,7 @@
 <script setup>
 import { ref, onMounted } from 'vue'
 import { systemdApi } from '../api'
-import { unitBadgeClass, restartingLabel } from '../unitBadge'
+import { unitBadgeClass, unitStatusLabel, statusTitle } from '../unitBadge'
 
 const units = ref([])
 const error = ref('')
@@ -42,7 +42,7 @@ onMounted(load)
       <tbody>
         <tr v-for="u in units" :key="u.name">
           <td><RouterLink class="row-link" :to="`/systemd/${encodeURIComponent(u.name)}`">{{ u.name }}</RouterLink></td>
-          <td><span :class="unitBadgeClass(u)" :title="restartingLabel(u)">{{ u.active }}</span></td>
+          <td><span :class="unitBadgeClass(u)" :title="statusTitle(u)">{{ unitStatusLabel(u) }}</span></td>
           <td class="muted">{{ u.sub }}</td>
           <td class="muted">{{ u.description }}</td>
         </tr>

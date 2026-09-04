@@ -2,7 +2,7 @@
 import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { quadletsApi, systemdApi, containersApi } from '../api'
-import { unitBadgeClass, restartingLabel } from '../unitBadge'
+import { unitBadgeClass, unitStatusLabel, statusTitle } from '../unitBadge'
 import CodeEditor from '../components/CodeEditor.vue'
 
 const props = defineProps({ filename: { type: String, required: true } })
@@ -61,10 +61,14 @@ async function load() {
 
 async function save() {
   error.value = ''
+  busy.value = true
   try {
     await quadletsApi.write(props.filename, content.value)
+    await load()
   } catch (e) {
     error.value = e.message
+  } finally {
+    busy.value = false
   }
 }
 
@@ -145,7 +149,7 @@ onMounted(load)
           <p style="margin-bottom: 0.25rem">
             Systemd unit:
             <template v-if="systemdUnit">
-              <span :class="unitBadgeClass(systemdUnit)" :title="restartingLabel(systemdUnit)">{{ systemdUnit.active }}</span>
+              <span :class="unitBadgeClass(systemdUnit)" :title="statusTitle(systemdUnit)">{{ unitStatusLabel(systemdUnit) }}</span>
               <RouterLink :to="`/systemd/${encodeURIComponent(systemdUnit.name)}`">{{ systemdUnit.name }}</RouterLink>
             </template>
             <span v-else class="muted">Not found.</span>
@@ -161,7 +165,7 @@ onMounted(load)
           </p>
         </article>
 
-        <button class="secondary" @click="viewLogs">{{ showLogs ? 'Hide Logs' : 'View Logs' }}</button>
+        <button class="secondary" @click="viewLogs">{{ showLogs ? 'Hide Systemd Logs' : 'View Systemd Logs' }}</button>
         <CodeEditor v-if="showLogs" :model-value="logs" readonly autoscroll />
       </div>
     </div>

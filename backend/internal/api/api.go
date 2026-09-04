@@ -26,6 +26,7 @@ func NewMux(cfg *config.Config) *http.ServeMux {
 	mux.HandleFunc("GET /api/stacks/{name}/services/{service}/logs", stackServiceLogs(cfg))
 
 	mux.HandleFunc("GET /api/quadlets", listQuadlets(cfg))
+	mux.HandleFunc("GET /api/quadlets/generator-logs", quadletGeneratorLogs())
 	mux.HandleFunc("GET /api/quadlets/{filename}", getQuadlet(cfg))
 	mux.HandleFunc("PUT /api/quadlets/{filename}", writeQuadlet(cfg))
 	mux.HandleFunc("DELETE /api/quadlets/{filename}", deleteQuadlet(cfg))
@@ -194,7 +195,12 @@ func writeQuadlet(cfg *config.Config) http.HandlerFunc {
 			writeErr(w, 400, err)
 			return
 		}
-		if err := quadlets.Write(r.Context(), cfg.QuadletDir, r.PathValue("filename"), body.Content); err != nil {
+		filename := r.PathValue("filename")
+		if err := quadlets.Validate(r.Context(), cfg.QuadletDir, filename, body.Content); err != nil {
+			writeErr(w, 500, err)
+			return
+		}
+		if err := quadlets.Write(r.Context(), cfg.QuadletDir, filename, body.Content); err != nil {
 			writeErr(w, 500, err)
 			return
 		}
@@ -246,6 +252,17 @@ func quadletLogs() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		unit := quadlets.UnitName(r.PathValue("filename"))
 		out, err := podmanx.UnitLogs(r.Context(), unit, linesParam(r))
+		if err != nil {
+			writeErr(w, 500, err)
+			return
+		}
+		writeJSON(w, map[string]string{"logs": out})
+	}
+}
+
+func quadletGeneratorLogs() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		out, err := podmanx.GeneratorLogs(r.Context(), linesParam(r))
 		if err != nil {
 			writeErr(w, 500, err)
 			return
