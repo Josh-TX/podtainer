@@ -91,7 +91,18 @@ h1 .badge {
 }
 .badge.active, .badge.healthy, .badge.deployed, .badge.running { --badge-color: var(--pico-ins-color); }
 .badge.failed, .badge.unhealthy, .badge.restarting, .badge.missing { --badge-color: var(--pico-del-color); }
-.badge.drift, .badge.notdeployed, .badge.starting, .badge.orphaned { --badge-color: light-dark(#9a6700, #e3b341); }
+.badge.notdeployed, .badge.starting, .badge.orphaned { --badge-color: light-dark(#9a6700, #e3b341); }
+
+.drift-icon {
+  display: inline-flex;
+  vertical-align: middle;
+  margin-left: 0.4rem;
+  color: light-dark(#9a6700, #e3b341);
+  cursor: help;
+}
+[data-tooltip].drift-icon {
+  border-bottom: none;
+}
 
 .error-banner, .warn-banner {
   padding: 0.75rem 1rem;
