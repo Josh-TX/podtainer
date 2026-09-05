@@ -42,6 +42,41 @@ export const systemdApi = {
   content: (name) => request(`/systemd/${enc(name)}/content`),
 }
 
+function encPath(path) {
+  return (path || '').split('/').filter(Boolean).map(enc).join('/')
+}
+
+function fsUrl(name, path) {
+  return `/volumes/${enc(name)}/fs/${encPath(path)}`
+}
+
+// fs() hits the unified GET endpoint, which returns either
+// {isDir: true, entries} or {isDir: false, size, content}.
+function fs(name, path) {
+  return request(fsUrl(name, path))
+}
+
+export const volumesApi = {
+  list: () => request('/volumes'),
+  get: (name) => request(`/volumes/${enc(name)}`),
+  listDir: async (name, path) => (await fs(name, path)).entries,
+  readFile: (name, path) => fs(name, path),
+  writeFile: (name, path, content) =>
+    request(fsUrl(name, path), { method: 'PUT', body: JSON.stringify({ content }) }),
+  createFile: (name, path) => request(fsUrl(name, path), { method: 'POST', body: JSON.stringify({ type: 'file' }) }),
+  mkdir: (name, path) => request(fsUrl(name, path), { method: 'POST', body: JSON.stringify({ type: 'dir' }) }),
+  deleteEntry: (name, path) => request(fsUrl(name, path), { method: 'DELETE' }),
+  move: (name, path, dest, isCopy) =>
+    request(fsUrl(name, path), { method: 'PATCH', body: JSON.stringify({ dest, isCopy }) }),
+  downloadUrl: (name, path) => `/api${fsUrl(name, path)}?download=1`,
+  async upload(name, path, file) {
+    const res = await fetch(`/api${fsUrl(name, path)}?upload=1`, { method: 'POST', body: file })
+    const body = await res.json().catch(() => ({}))
+    if (!res.ok) throw new Error(body.error || res.statusText)
+    return body
+  },
+}
+
 export const containersApi = {
   list: () => request('/containers'),
   stats: (id) => request(`/containers/${enc(id)}/stats`),

@@ -7,6 +7,8 @@ import SystemdView from './views/SystemdView.vue'
 import SystemdDetailView from './views/SystemdDetailView.vue'
 import ContainersView from './views/ContainersView.vue'
 import ContainerDetailView from './views/ContainerDetailView.vue'
+import VolumesView from './views/VolumesView.vue'
+import VolumeDetailView from './views/VolumeDetailView.vue'
 
 export default createRouter({
   history: createWebHistory(),
@@ -21,5 +23,7 @@ export default createRouter({
     { path: '/systemd/:name', component: SystemdDetailView, props: true },
     { path: '/containers', component: ContainersView },
     { path: '/containers/:id', component: ContainerDetailView, props: true },
+    { path: '/volumes', component: VolumesView },
+    { path: '/volumes/:name', component: VolumeDetailView, props: true },
   ],
 })

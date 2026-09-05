@@ -4,15 +4,18 @@ package api
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"path/filepath"
 	"strconv"
+	"strings"
 
 	"podtainer/internal/config"
 	"podtainer/internal/podmanx"
 	"podtainer/internal/quadlets"
 	"podtainer/internal/stacks"
 	"podtainer/internal/sysdunits"
+	"podtainer/internal/volumes"
 )
 
 func NewMux(cfg *config.Config) *http.ServeMux {
@@ -46,6 +49,14 @@ func NewMux(cfg *config.Config) *http.ServeMux {
 	mux.HandleFunc("POST /api/containers/{id}/stop", stopContainer())
 	mux.HandleFunc("POST /api/containers/{id}/restart", restartContainer())
 	mux.HandleFunc("DELETE /api/containers/{id}", removeContainer())
+
+	mux.HandleFunc("GET /api/volumes", listVolumes())
+	mux.HandleFunc("GET /api/volumes/{name}", getVolume())
+	mux.HandleFunc("GET /api/volumes/{name}/fs/{path...}", getVolumeFs())
+	mux.HandleFunc("POST /api/volumes/{name}/fs/{path...}", createVolumeFsEntry())
+	mux.HandleFunc("PUT /api/volumes/{name}/fs/{path...}", writeVolumeFsEntry())
+	mux.HandleFunc("PATCH /api/volumes/{name}/fs/{path...}", moveVolumeFsEntry())
+	mux.HandleFunc("DELETE /api/volumes/{name}/fs/{path...}", deleteVolumeFsEntry())
 
 	return mux
 }
@@ -378,5 +389,215 @@ func removeContainer() http.HandlerFunc {
 			return
 		}
 		writeJSON(w, map[string]string{"status": "removed"})
+	}
+}
+
+// --- volumes ---
+
+func listVolumes() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		vols, err := volumes.List(r.Context())
+		if err != nil {
+			writeErr(w, 500, err)
+			return
+		}
+		writeJSON(w, vols)
+	}
+}
+
+func getVolume() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		name := r.PathValue("name")
+		vol, err := volumes.Inspect(r.Context(), name)
+		if err != nil {
+			writeErr(w, 404, err)
+			return
+		}
+		containers, err := podmanx.ListByVolume(r.Context(), name)
+		if err != nil {
+			writeErr(w, 500, err)
+			return
+		}
+		writeJSON(w, map[string]any{"volume": vol, "containers": containers})
+	}
+}
+
+// volumeMountpoint is the shared first step for every file-browsing
+// endpoint below: resolve {name} to the host path its files actually live
+// under before touching {path}.
+func volumeMountpoint(r *http.Request) (string, error) {
+	vol, err := volumes.Inspect(r.Context(), r.PathValue("name"))
+	if err != nil {
+		return "", err
+	}
+	return vol.Mountpoint, nil
+}
+
+// getVolumeFs serves both directory listings and file reads/downloads off a
+// single path, since the caller already knows which one it clicked on and
+// the response shape says so anyway via "isDir".
+func getVolumeFs() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		mp, err := volumeMountpoint(r)
+		if err != nil {
+			writeErr(w, 404, err)
+			return
+		}
+		path := r.PathValue("path")
+		isDir, size, err := volumes.Stat(r.Context(), mp, path)
+		if err != nil {
+			writeErr(w, 404, err)
+			return
+		}
+
+		if r.URL.Query().Get("download") == "1" {
+			if isDir {
+				writeErr(w, 400, fmt.Errorf("cannot download a directory"))
+				return
+			}
+			w.Header().Set("Content-Type", "application/octet-stream")
+			w.Header().Set("Content-Disposition", `attachment; filename="`+sanitizeHeaderFilename(filepath.Base(path))+`"`)
+			_ = volumes.StreamDownload(r.Context(), w, mp, path)
+			return
+		}
+
+		if isDir {
+			entries, err := volumes.ListDir(r.Context(), mp, path)
+			if err != nil {
+				writeErr(w, 500, err)
+				return
+			}
+			writeJSON(w, map[string]any{"isDir": true, "entries": entries})
+			return
+		}
+
+		content, err := volumes.ReadFile(r.Context(), mp, path)
+		if err != nil {
+			writeErr(w, 400, err)
+			return
+		}
+		writeJSON(w, map[string]any{"isDir": false, "size": size, "content": content})
+	}
+}
+
+// sanitizeHeaderFilename strips characters that would break out of the
+// quoted filename in a Content-Disposition header.
+func sanitizeHeaderFilename(name string) string {
+	name = strings.ReplaceAll(name, `"`, "'")
+	return strings.Map(func(r rune) rune {
+		if r < 0x20 {
+			return -1
+		}
+		return r
+	}, name)
+}
+
+// createVolumeFsEntry either uploads a raw file body (?upload=1) or creates
+// an empty file/dir per the JSON "type" field.
+func createVolumeFsEntry() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		mp, err := volumeMountpoint(r)
+		if err != nil {
+			writeErr(w, 404, err)
+			return
+		}
+		path := r.PathValue("path")
+
+		if r.URL.Query().Get("upload") == "1" {
+			if err := volumes.UploadFile(r.Context(), r.Body, mp, path); err != nil {
+				writeErr(w, 500, err)
+				return
+			}
+			writeJSON(w, map[string]string{"status": "uploaded"})
+			return
+		}
+
+		var body struct {
+			Type string `json:"type"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			writeErr(w, 400, err)
+			return
+		}
+		switch body.Type {
+		case "file":
+			err = volumes.CreateFile(r.Context(), mp, path)
+		case "dir":
+			err = volumes.Mkdir(r.Context(), mp, path)
+		default:
+			writeErr(w, 400, fmt.Errorf(`type must be "file" or "dir"`))
+			return
+		}
+		if err != nil {
+			writeErr(w, 500, err)
+			return
+		}
+		writeJSON(w, map[string]string{"status": "created"})
+	}
+}
+
+func writeVolumeFsEntry() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		var body struct {
+			Content string `json:"content"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			writeErr(w, 400, err)
+			return
+		}
+		mp, err := volumeMountpoint(r)
+		if err != nil {
+			writeErr(w, 404, err)
+			return
+		}
+		if err := volumes.WriteFile(r.Context(), mp, r.PathValue("path"), body.Content); err != nil {
+			writeErr(w, 500, err)
+			return
+		}
+		writeJSON(w, map[string]string{"status": "saved"})
+	}
+}
+
+// moveVolumeFsEntry handles both move and copy; a rename is just a move to
+// a destination path that shares the same parent directory.
+func moveVolumeFsEntry() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		var body struct {
+			Dest   string `json:"dest"`
+			IsCopy bool   `json:"isCopy"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			writeErr(w, 400, err)
+			return
+		}
+		mp, err := volumeMountpoint(r)
+		if err != nil {
+			writeErr(w, 404, err)
+			return
+		}
+		if err := volumes.Move(r.Context(), mp, r.PathValue("path"), body.Dest, body.IsCopy); err != nil {
+			writeErr(w, 500, err)
+			return
+		}
+		status := "moved"
+		if body.IsCopy {
+			status = "copied"
+		}
+		writeJSON(w, map[string]string{"status": status})
+	}
+}
+
+func deleteVolumeFsEntry() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		mp, err := volumeMountpoint(r)
+		if err != nil {
+			writeErr(w, 404, err)
+			return
+		}
+		if err := volumes.Delete(r.Context(), mp, r.PathValue("path")); err != nil {
+			writeErr(w, 500, err)
+			return
+		}
+		writeJSON(w, map[string]string{"status": "deleted"})
 	}
 }

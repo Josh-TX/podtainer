@@ -37,6 +37,20 @@ func List(ctx context.Context) ([]Container, error) {
 	if err != nil {
 		return nil, err
 	}
+	return parseContainers(out)
+}
+
+// ListByVolume returns every container (running or not) that mounts the
+// named volume, for the volume detail page's "used by" cross-reference.
+func ListByVolume(ctx context.Context, volumeName string) ([]Container, error) {
+	out, err := execx.Run(ctx, "podman", "ps", "-a", "--filter", "volume="+volumeName, "--format", "json")
+	if err != nil {
+		return nil, err
+	}
+	return parseContainers(out)
+}
+
+func parseContainers(out string) ([]Container, error) {
 	var raws []rawContainer
 	if strings.TrimSpace(out) == "" {
 		return []Container{}, nil
