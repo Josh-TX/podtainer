@@ -5,6 +5,7 @@ package stacks
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"sort"
@@ -125,21 +126,54 @@ func installedFiles(cfg *config.Config, name string) (map[string]string, error) 
 // units, and applies a pure filesystem diff against the stack's existing
 // prefixed files: removed files are stopped+disabled+deleted, new/changed
 // ones are written and (re)started. force rewrites+restarts every unit
-// unconditionally even if content is unchanged.
+// unconditionally even if content is unchanged. pull re-pulls every image
+// the new content references before any of that, and requires force (a
+// pulled image only matters if every container unit actually restarts).
+// isCreate additionally rejects a name already claimed by an existing
+// compose file or by orphaned quadlet files sharing its "{name}-" prefix.
 //
 // Once the compose file and quadlet units are committed to disk, a unit
 // that fails to start/restart (e.g. a port conflict) does not abort the
 // deploy: the stack itself was created successfully, and its per-unit
 // status is visible on the stack details page.
-func Deploy(ctx context.Context, cfg *config.Config, name, content string, force bool) error {
+func Deploy(ctx context.Context, cfg *config.Config, name, content string, force, pull, isCreate bool) error {
 	if err := composeutil.ValidateName(name); err != nil {
 		return err
+	}
+	if pull && !force {
+		return fmt.Errorf("re-pulling images requires redeploying unchanged systemd services too")
 	}
 	if err := composeutil.Validate([]byte(content)); err != nil {
 		return err
 	}
 
 	path := composePath(cfg, name)
+
+	if isCreate {
+		if _, err := os.Stat(path); err == nil {
+			return fmt.Errorf("a stack named %q already exists", name)
+		}
+		existing, err := installedFiles(cfg, name)
+		if err != nil {
+			return err
+		}
+		if len(existing) > 0 {
+			return fmt.Errorf("quadlet files already exist with the %q- prefix; delete them or choose a different name", name)
+		}
+	}
+
+	if pull {
+		imgs, err := composeutil.ServiceImages([]byte(content))
+		if err != nil {
+			return err
+		}
+		for _, image := range imgs {
+			if _, err := execx.RunLong(ctx, 5*time.Minute, "podman", "pull", image); err != nil {
+				return err
+			}
+		}
+	}
+
 	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
 		return err
 	}
@@ -209,31 +243,125 @@ func Deploy(ctx context.Context, cfg *config.Config, name, content string, force
 	return nil
 }
 
-// Delete stops and removes every unit file owned by this stack (matched by
-// filename prefix) and its compose source. Named volumes are only ever
-// referenced by a .volume unit file here, which is included in this delete
-// like any other unit — the underlying `podman volume` data is untouched.
-func Delete(ctx context.Context, cfg *config.Config, name string) error {
+// DeleteOptions selects which parts of a stack Delete tears down. Stack and
+// Quadlet are independent — deleting the compose file while leaving the
+// quadlet units in place is the intended way to hand a stack off to
+// unmanaged, hand-edited quadlet files. Images/Volumes do require Quadlet
+// (both only make sense alongside removing the units that reference them) —
+// callers must enforce that dependency themselves, since Delete rejects a
+// mismatch rather than silently coercing it.
+type DeleteOptions struct {
+	Stack   bool
+	Quadlet bool
+	Images  bool
+	Volumes bool
+}
+
+// Delete tears down the parts of a stack selected by opts. Quadlet removal
+// stops+disables+deletes every unit file owned by this stack (matched by
+// filename prefix); Volumes additionally removes the actual `podman volume`
+// data those units referenced (normally preserved). Images removes every
+// image the stack's compose file references, except ones still referenced
+// by another stack's compose file.
+func Delete(ctx context.Context, cfg *config.Config, name string, opts DeleteOptions) error {
+	if (opts.Images || opts.Volumes) && !opts.Quadlet {
+		return fmt.Errorf("deleting images or volumes requires also deleting quadlet files")
+	}
+
+	var content string
+	if opts.Images {
+		c, err := Read(cfg, name)
+		if err != nil {
+			return err
+		}
+		content = c
+	}
+
 	existing, err := installedFiles(cfg, name)
 	if err != nil {
 		return err
 	}
-	filenames := make([]string, 0, len(existing))
-	for filename := range existing {
-		filenames = append(filenames, filename)
+
+	if opts.Quadlet {
+		filenames := make([]string, 0, len(existing))
+		for filename := range existing {
+			filenames = append(filenames, filename)
+		}
+		for _, filename := range orderForRemoval(filenames) {
+			if err := quadlets.RemoveFile(ctx, cfg.QuadletDir, filename); err != nil {
+				return err
+			}
+		}
+
+		if opts.Volumes {
+			for filename := range existing {
+				if !strings.HasSuffix(filename, ".volume") {
+					continue
+				}
+				base := strings.TrimSuffix(filename, ".volume")
+				execx.Run(ctx, "podman", "volume", "rm", "systemd-"+base)
+			}
+		}
 	}
-	for _, filename := range orderForRemoval(filenames) {
-		if err := quadlets.RemoveFile(ctx, cfg.QuadletDir, filename); err != nil {
+
+	if opts.Stack {
+		if err := os.Remove(composePath(cfg, name)); err != nil && !os.IsNotExist(err) {
 			return err
 		}
 	}
 
-	if err := os.Remove(composePath(cfg, name)); err != nil && !os.IsNotExist(err) {
-		return err
+	if opts.Quadlet {
+		if _, err := execx.Run(ctx, "systemctl", "--user", "daemon-reload"); err != nil {
+			return err
+		}
 	}
 
-	_, err = execx.Run(ctx, "systemctl", "--user", "daemon-reload")
-	return err
+	if opts.Images {
+		imgs, err := composeutil.ServiceImages([]byte(content))
+		if err != nil {
+			return err
+		}
+		inUseElsewhere, err := imagesUsedByOtherStacks(cfg, name)
+		if err != nil {
+			return err
+		}
+		for _, image := range imgs {
+			if inUseElsewhere[image] {
+				continue
+			}
+			execx.Run(ctx, "podman", "rmi", image)
+		}
+	}
+
+	return nil
+}
+
+// imagesUsedByOtherStacks returns the set of image refs referenced by any
+// stack other than except, so Delete's image cleanup never removes an image
+// a sibling stack still depends on.
+func imagesUsedByOtherStacks(cfg *config.Config, except string) (map[string]bool, error) {
+	names, err := List(cfg)
+	if err != nil {
+		return nil, err
+	}
+	inUse := map[string]bool{}
+	for _, name := range names {
+		if name == except {
+			continue
+		}
+		content, err := Read(cfg, name)
+		if err != nil {
+			continue
+		}
+		imgs, err := composeutil.ServiceImages([]byte(content))
+		if err != nil {
+			continue
+		}
+		for _, image := range imgs {
+			inUse[image] = true
+		}
+	}
+	return inUse, nil
 }
 
 // orderForRemoval sorts filenames so containers are torn down before the
@@ -253,38 +381,6 @@ func orderForRemoval(filenames []string) []string {
 	sorted := append([]string(nil), filenames...)
 	sort.SliceStable(sorted, func(i, j int) bool { return rank(sorted[i]) < rank(sorted[j]) })
 	return sorted
-}
-
-// PullAndRestart pulls every image referenced by the stack's compose file
-// and restarts every container unit in the stack.
-func PullAndRestart(ctx context.Context, cfg *config.Config, name string) error {
-	content, err := Read(cfg, name)
-	if err != nil {
-		return err
-	}
-	images, err := composeutil.ServiceImages([]byte(content))
-	if err != nil {
-		return err
-	}
-	for _, image := range images {
-		if _, err := execx.RunLong(ctx, 5*time.Minute, "podman", "pull", image); err != nil {
-			return err
-		}
-	}
-
-	existing, err := installedFiles(cfg, name)
-	if err != nil {
-		return err
-	}
-	for filename := range existing {
-		if !strings.HasSuffix(filename, ".container") {
-			continue
-		}
-		if _, err := execx.Run(ctx, "systemctl", "--user", "restart", quadlets.UnitName(filename)); err != nil {
-			return err
-		}
-	}
-	return nil
 }
 
 // GetStatus reports deployment/drift state plus per-unit systemd/health

@@ -1,5 +1,5 @@
 <script setup>
-import { ref, watch, onMounted } from 'vue'
+import { ref, computed, watch, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { stacksApi } from '../api'
 import { unitBadgeClass, restartingLabel } from '../unitBadge'
@@ -67,16 +67,12 @@ function resetForRoute() {
 
 watch(() => [props.isNew, route.params.name], resetForRoute)
 
-async function saveAndDeploy(force = false) {
+async function createStack() {
   error.value = ''
   busy.value = true
   try {
-    await stacksApi.deploy(name.value, content.value, force)
-    if (props.isNew) {
-      router.push(`/stacks/${name.value}`)
-    } else {
-      await load()
-    }
+    await stacksApi.deploy(name.value, content.value, { isCreate: true })
+    router.push(`/stacks/${name.value}`)
   } catch (e) {
     error.value = e.message
   } finally {
@@ -84,11 +80,24 @@ async function saveAndDeploy(force = false) {
   }
 }
 
-async function pullAndRestart() {
+const showDeployModal = ref(false)
+const deployForce = ref(false)
+const deployPull = ref(false)
+
+watch(deployPull, (v) => { if (v) deployForce.value = true })
+
+function openDeployModal() {
+  deployForce.value = false
+  deployPull.value = false
+  showDeployModal.value = true
+}
+
+async function confirmDeploy() {
+  showDeployModal.value = false
   error.value = ''
   busy.value = true
   try {
-    await stacksApi.pull(name.value)
+    await stacksApi.deploy(name.value, content.value, { force: deployForce.value, pull: deployPull.value })
     await load()
   } catch (e) {
     error.value = e.message
@@ -97,12 +106,33 @@ async function pullAndRestart() {
   }
 }
 
-async function remove() {
-  if (!confirm(`Delete stack "${name.value}"? This stops and removes its units and compose file. Named volumes are preserved.`)) return
+const showDeleteModal = ref(false)
+const delStack = ref(true)
+const delQuadlet = ref(true)
+const delImages = ref(false)
+const delVolumes = ref(false)
+
+const deleteValidationError = computed(() => {
+  if ((delImages.value || delVolumes.value) && !delQuadlet.value) {
+    return 'Deleting images or volumes requires also deleting quadlet files.'
+  }
+  return ''
+})
+
+function openDeleteModal() {
+  delStack.value = true
+  delQuadlet.value = true
+  delImages.value = false
+  delVolumes.value = false
+  showDeleteModal.value = true
+}
+
+async function confirmDelete() {
+  showDeleteModal.value = false
   error.value = ''
   busy.value = true
   try {
-    await stacksApi.delete(name.value)
+    await stacksApi.delete(name.value, { stack: delStack.value, quadlet: delQuadlet.value, images: delImages.value, volumes: delVolumes.value })
     router.push('/stacks')
   } catch (e) {
     error.value = e.message
@@ -131,17 +161,61 @@ onMounted(resetForRoute)
       </span>
     </h1>
     <div class="toolbar" style="margin-bottom: 0">
-      <button :disabled="busy || !name" @click="saveAndDeploy(false)">Save &amp; Deploy</button>
-      <details v-if="!isNew" class="dropdown">
-        <summary role="button" class="secondary">More Options</summary>
-        <ul>
-          <li><a href="#" @click.prevent="!busy && saveAndDeploy(true)">Force Redeploy</a></li>
-          <li><a href="#" @click.prevent="!busy && pullAndRestart()">Pull &amp; Restart</a></li>
-          <li><a href="#" class="danger-link" @click.prevent="!busy && remove()">Delete</a></li>
-        </ul>
-      </details>
+      <button :disabled="busy || !name" @click="isNew ? createStack() : openDeployModal()">Save &amp; Deploy</button>
+      <button v-if="!isNew" class="danger" :disabled="busy" @click="openDeleteModal">Delete</button>
     </div>
   </div>
+
+  <dialog :open="showDeployModal">
+    <article>
+      <header>
+        <button aria-label="Close" rel="prev" @click="showDeployModal = false"></button>
+        <strong>Save &amp; Deploy</strong>
+      </header>
+      <label>
+        <input type="checkbox" v-model="deployForce" :disabled="deployPull" />
+        Re-deploy unchanged systemd services
+      </label>
+      <label>
+        <input type="checkbox" v-model="deployPull" />
+        Re-pull all images
+      </label>
+      <footer>
+        <button class="secondary" @click="showDeployModal = false">Cancel</button>
+        <button @click="confirmDeploy">Deploy</button>
+      </footer>
+    </article>
+  </dialog>
+
+  <dialog :open="showDeleteModal">
+    <article>
+      <header>
+        <button aria-label="Close" rel="prev" @click="showDeleteModal = false"></button>
+        <strong>Delete Stack</strong>
+      </header>
+      <label>
+        <input type="checkbox" v-model="delStack" />
+        Delete Stack (compose yaml)
+      </label>
+      <label>
+        <input type="checkbox" v-model="delQuadlet" />
+        Delete Quadlet Files
+      </label>
+      <label>
+        <input type="checkbox" v-model="delImages" />
+        Delete Images (if unused)
+      </label>
+      <label>
+        <input type="checkbox" v-model="delVolumes" />
+        Delete Volumes (if unused)
+      </label>
+      <p v-if="deleteValidationError" class="error-banner">{{ deleteValidationError }}</p>
+      <footer>
+        <button class="secondary" @click="showDeleteModal = false">Cancel</button>
+        <button class="danger" :disabled="!!deleteValidationError" @click="confirmDelete">Delete</button>
+      </footer>
+    </article>
+  </dialog>
 
   <div v-if="error" class="error-banner">{{ error }}</div>
   <p v-if="loading" aria-busy="true">Loading…</p>

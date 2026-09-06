@@ -15,10 +15,12 @@ const enc = encodeURIComponent
 export const stacksApi = {
   list: () => request('/stacks'),
   get: (name) => request(`/stacks/${enc(name)}`),
-  deploy: (name, content, force = false) =>
-    request(`/stacks/${enc(name)}`, { method: 'PUT', body: JSON.stringify({ content, force }) }),
-  delete: (name) => request(`/stacks/${enc(name)}`, { method: 'DELETE' }),
-  pull: (name) => request(`/stacks/${enc(name)}/pull`, { method: 'POST' }),
+  deploy: (name, content, { force = false, pull = false, isCreate = false } = {}) =>
+    request(`/stacks/${enc(name)}`, { method: 'PUT', body: JSON.stringify({ content, force, pull, isCreate }) }),
+  delete: (name, { stack, quadlet, images, volumes }) => {
+    const params = new URLSearchParams({ stack, quadlet, images, volumes })
+    return request(`/stacks/${enc(name)}?${params}`, { method: 'DELETE' })
+  },
   serviceLogs: (name, service, lines = 200) =>
     request(`/stacks/${enc(name)}/services/${enc(service)}/logs?lines=${lines}`),
 }

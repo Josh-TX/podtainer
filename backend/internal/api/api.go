@@ -26,7 +26,6 @@ func NewMux(cfg *config.Config) *http.ServeMux {
 	mux.HandleFunc("GET /api/stacks/{name}", getStack(cfg))
 	mux.HandleFunc("PUT /api/stacks/{name}", deployStack(cfg))
 	mux.HandleFunc("DELETE /api/stacks/{name}", deleteStack(cfg))
-	mux.HandleFunc("POST /api/stacks/{name}/pull", pullStack(cfg))
 	mux.HandleFunc("GET /api/stacks/{name}/services/{service}/logs", stackServiceLogs(cfg))
 
 	mux.HandleFunc("GET /api/quadlets", listQuadlets(cfg))
@@ -126,14 +125,16 @@ func deployStack(cfg *config.Config) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		name := r.PathValue("name")
 		var body struct {
-			Content string `json:"content"`
-			Force   bool   `json:"force"`
+			Content  string `json:"content"`
+			Force    bool   `json:"force"`
+			Pull     bool   `json:"pull"`
+			IsCreate bool   `json:"isCreate"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 			writeErr(w, 400, err)
 			return
 		}
-		if err := stacks.Deploy(r.Context(), cfg, name, body.Content, body.Force); err != nil {
+		if err := stacks.Deploy(r.Context(), cfg, name, body.Content, body.Force, body.Pull, body.IsCreate); err != nil {
 			writeErr(w, 500, err)
 			return
 		}
@@ -144,22 +145,18 @@ func deployStack(cfg *config.Config) http.HandlerFunc {
 func deleteStack(cfg *config.Config) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		name := r.PathValue("name")
-		if err := stacks.Delete(r.Context(), cfg, name); err != nil {
+		q := r.URL.Query()
+		opts := stacks.DeleteOptions{
+			Stack:   q.Get("stack") == "true",
+			Quadlet: q.Get("quadlet") == "true",
+			Images:  q.Get("images") == "true",
+			Volumes: q.Get("volumes") == "true",
+		}
+		if err := stacks.Delete(r.Context(), cfg, name, opts); err != nil {
 			writeErr(w, 500, err)
 			return
 		}
 		writeJSON(w, map[string]string{"status": "deleted"})
-	}
-}
-
-func pullStack(cfg *config.Config) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		name := r.PathValue("name")
-		if err := stacks.PullAndRestart(r.Context(), cfg, name); err != nil {
-			writeErr(w, 500, err)
-			return
-		}
-		writeJSON(w, map[string]string{"status": "pulled"})
 	}
 }
 
