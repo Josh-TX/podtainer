@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"podtainer/internal/config"
+	"podtainer/internal/images"
 	"podtainer/internal/podmanx"
 	"podtainer/internal/quadlets"
 	"podtainer/internal/stacks"
@@ -49,6 +50,10 @@ func NewMux(cfg *config.Config) *http.ServeMux {
 	mux.HandleFunc("POST /api/containers/{id}/stop", stopContainer())
 	mux.HandleFunc("POST /api/containers/{id}/restart", restartContainer())
 	mux.HandleFunc("DELETE /api/containers/{id}", removeContainer())
+
+	mux.HandleFunc("GET /api/images", listImages())
+	mux.HandleFunc("DELETE /api/images/{id}", deleteImage())
+	mux.HandleFunc("POST /api/images/prune", pruneImages())
 
 	mux.HandleFunc("GET /api/volumes", listVolumes())
 	mux.HandleFunc("GET /api/volumes/{name}", getVolume())
@@ -389,6 +394,76 @@ func removeContainer() http.HandlerFunc {
 			return
 		}
 		writeJSON(w, map[string]string{"status": "removed"})
+	}
+}
+
+// --- images ---
+
+// imageRow is the images list's response shape: each image row carries the
+// containers that reference its ID pre-joined, since the page has no detail
+// view to fetch that separately.
+type imageRow struct {
+	ID         string              `json:"id"`
+	Repository string              `json:"repository"`
+	Tag        string              `json:"tag"`
+	Size       int64               `json:"size"`
+	CreatedAt  string              `json:"createdAt"`
+	Containers []podmanx.Container `json:"containers"`
+}
+
+func listImages() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		imgs, err := images.List(r.Context())
+		if err != nil {
+			writeErr(w, 500, err)
+			return
+		}
+		containers, err := podmanx.List(r.Context())
+		if err != nil {
+			writeErr(w, 500, err)
+			return
+		}
+		byImageID := map[string][]podmanx.Container{}
+		for _, c := range containers {
+			byImageID[c.ImageID] = append(byImageID[c.ImageID], c)
+		}
+		rows := make([]imageRow, 0, len(imgs))
+		for _, img := range imgs {
+			imgContainers := byImageID[img.ID]
+			if imgContainers == nil {
+				imgContainers = []podmanx.Container{}
+			}
+			rows = append(rows, imageRow{
+				ID:         img.ID,
+				Repository: img.Repository,
+				Tag:        img.Tag,
+				Size:       img.Size,
+				CreatedAt:  img.CreatedAt,
+				Containers: imgContainers,
+			})
+		}
+		writeJSON(w, rows)
+	}
+}
+
+func deleteImage() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if err := images.Delete(r.Context(), r.PathValue("id")); err != nil {
+			writeErr(w, 500, err)
+			return
+		}
+		writeJSON(w, map[string]string{"status": "deleted"})
+	}
+}
+
+func pruneImages() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		all := r.URL.Query().Get("all") == "1"
+		if err := images.Prune(r.Context(), all); err != nil {
+			writeErr(w, 500, err)
+			return
+		}
+		writeJSON(w, map[string]string{"status": "pruned"})
 	}
 }
 

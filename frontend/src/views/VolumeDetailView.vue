@@ -2,6 +2,7 @@
 import { ref, computed, onMounted } from 'vue'
 import { volumesApi } from '../api'
 import CodeEditor from '../components/CodeEditor.vue'
+import { humanSize } from '../utils/format'
 
 const props = defineProps({ name: { type: String, required: true } })
 
@@ -42,18 +43,6 @@ const breadcrumbs = computed(() => {
 
 function joinPath(dir, name) {
   return dir ? `${dir}/${name}` : name
-}
-
-function humanSize(bytes) {
-  if (bytes < 1024) return `${bytes} B`
-  const units = ['KB', 'MB', 'GB', 'TB']
-  let n = bytes / 1024
-  let i = 0
-  while (n >= 1024 && i < units.length - 1) {
-    n /= 1024
-    i++
-  }
-  return `${n.toFixed(1)} ${units[i]}`
 }
 
 async function load() {

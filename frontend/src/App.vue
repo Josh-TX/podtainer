@@ -3,7 +3,7 @@ import { computed } from 'vue'
 import { useRoute } from 'vue-router'
 
 const route = useRoute()
-const sections = ['stacks', 'quadlets', 'systemd', 'containers', 'volumes']
+const sections = ['stacks', 'quadlets', 'systemd', 'containers', 'images', 'volumes']
 const activeSection = computed(() => sections.find(s => route.path.startsWith(`/${s}`)))
 </script>
 
@@ -18,6 +18,7 @@ const activeSection = computed(() => sections.find(s => route.path.startsWith(`/
         <li :class="{ active: activeSection === 'quadlets' }"><RouterLink to="/quadlets">Quadlets</RouterLink></li>
         <li :class="{ active: activeSection === 'systemd' }"><RouterLink to="/systemd">Systemd</RouterLink></li>
         <li :class="{ active: activeSection === 'containers' }"><RouterLink to="/containers">Containers</RouterLink></li>
+        <li :class="{ active: activeSection === 'images' }"><RouterLink to="/images">Images</RouterLink></li>
         <li :class="{ active: activeSection === 'volumes' }"><RouterLink to="/volumes">Volumes</RouterLink></li>
       </ul>
     </nav>

@@ -75,6 +75,10 @@ button.danger {
 .toolbar details.dropdown {
   margin-bottom: 0;
 }
+.toolbar details.dropdown ul {
+  left: auto;
+  right: 0;
+}
 
 .badge {
   display: inline-block;

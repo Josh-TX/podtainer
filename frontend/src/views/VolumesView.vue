@@ -1,6 +1,7 @@
 <script setup>
 import { ref, onMounted } from 'vue'
 import { volumesApi } from '../api'
+import { timeAgo, fullDate } from '../utils/format'
 
 const volumes = ref([])
 const error = ref('')
@@ -16,22 +17,6 @@ async function load() {
   } finally {
     loading.value = false
   }
-}
-
-function timeAgo(dateStr) {
-  const sec = Math.floor((Date.now() - new Date(dateStr).getTime()) / 1000)
-  if (sec < 60) return 'just now'
-  const min = Math.floor(sec / 60)
-  if (min < 60) return `${min} minute${min === 1 ? '' : 's'} ago`
-  const hr = Math.floor(min / 60)
-  if (hr < 48) return `${hr} hour${hr === 1 ? '' : 's'} ago`
-  const day = Math.floor(hr / 24)
-  if (day < 90) return `${day} day${day === 1 ? '' : 's'} ago`
-  return new Date(dateStr).toLocaleDateString()
-}
-
-function fullDate(dateStr) {
-  return new Date(dateStr).toLocaleString()
 }
 
 onMounted(load)

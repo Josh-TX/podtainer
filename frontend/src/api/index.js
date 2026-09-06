@@ -77,6 +77,12 @@ export const volumesApi = {
   },
 }
 
+export const imagesApi = {
+  list: () => request('/images'),
+  delete: (id) => request(`/images/${enc(id)}`, { method: 'DELETE' }),
+  prune: (all) => request(`/images/prune?all=${all ? '1' : '0'}`, { method: 'POST' }),
+}
+
 export const containersApi = {
   list: () => request('/containers'),
   stats: (id) => request(`/containers/${enc(id)}/stats`),

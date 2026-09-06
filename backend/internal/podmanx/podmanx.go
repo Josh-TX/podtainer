@@ -17,6 +17,7 @@ type Container struct {
 	ID          string            `json:"id"`
 	Names       []string          `json:"names"`
 	Image       string            `json:"image"`
+	ImageID     string            `json:"imageId"`
 	State       string            `json:"state"`
 	Status      string            `json:"status"`
 	Labels      map[string]string `json:"labels"`
@@ -24,12 +25,13 @@ type Container struct {
 }
 
 type rawContainer struct {
-	ID     string            `json:"Id"`
-	Names  []string          `json:"Names"`
-	Image  string            `json:"Image"`
-	State  string            `json:"State"`
-	Status string            `json:"Status"`
-	Labels map[string]string `json:"Labels"`
+	ID      string            `json:"Id"`
+	Names   []string          `json:"Names"`
+	Image   string            `json:"Image"`
+	ImageID string            `json:"ImageID"`
+	State   string            `json:"State"`
+	Status  string            `json:"Status"`
+	Labels  map[string]string `json:"Labels"`
 }
 
 func List(ctx context.Context) ([]Container, error) {
@@ -64,6 +66,7 @@ func parseContainers(out string) ([]Container, error) {
 			ID:          r.ID,
 			Names:       r.Names,
 			Image:       r.Image,
+			ImageID:     r.ImageID,
 			State:       r.State,
 			Status:      r.Status,
 			Labels:      r.Labels,
