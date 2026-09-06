@@ -10,6 +10,7 @@ import (
 	"strconv"
 	"strings"
 
+	"podtainer/internal/auth"
 	"podtainer/internal/config"
 	"podtainer/internal/images"
 	"podtainer/internal/podmanx"
@@ -19,48 +20,57 @@ import (
 	"podtainer/internal/volumes"
 )
 
-func NewMux(cfg *config.Config) *http.ServeMux {
+// NewMux wires the API. Everything under /api/auth is reachable without a
+// session (that's how you get one); every other /api route requires one.
+func NewMux(cfg *config.Config, a *auth.Auth) *http.ServeMux {
 	mux := http.NewServeMux()
+	api := http.NewServeMux()
 
-	mux.HandleFunc("GET /api/stacks", listStacks(cfg))
-	mux.HandleFunc("GET /api/stacks/{name}", getStack(cfg))
-	mux.HandleFunc("PUT /api/stacks/{name}", deployStack(cfg))
-	mux.HandleFunc("DELETE /api/stacks/{name}", deleteStack(cfg))
-	mux.HandleFunc("GET /api/stacks/{name}/services/{service}/logs", stackServiceLogs(cfg))
+	mux.HandleFunc("GET /api/auth/status", a.StatusHandler())
+	mux.HandleFunc("POST /api/auth/setup", a.SetupHandler())
+	mux.HandleFunc("POST /api/auth/login", a.LoginHandler())
+	mux.HandleFunc("POST /api/auth/logout", a.LogoutHandler())
+	mux.Handle("/api/", a.Middleware(api))
 
-	mux.HandleFunc("GET /api/quadlets", listQuadlets(cfg))
-	mux.HandleFunc("GET /api/quadlets/generator-logs", quadletGeneratorLogs())
-	mux.HandleFunc("GET /api/quadlets/{filename}", getQuadlet(cfg))
-	mux.HandleFunc("PUT /api/quadlets/{filename}", writeQuadlet(cfg))
-	mux.HandleFunc("DELETE /api/quadlets/{filename}", deleteQuadlet(cfg))
-	mux.HandleFunc("POST /api/quadlets/{filename}/start", startQuadlet())
-	mux.HandleFunc("POST /api/quadlets/{filename}/stop", stopQuadlet())
-	mux.HandleFunc("POST /api/quadlets/{filename}/restart", restartQuadlet())
-	mux.HandleFunc("GET /api/quadlets/{filename}/logs", quadletLogs())
+	api.HandleFunc("GET /api/stacks", listStacks(cfg))
+	api.HandleFunc("GET /api/stacks/{name}", getStack(cfg))
+	api.HandleFunc("PUT /api/stacks/{name}", deployStack(cfg))
+	api.HandleFunc("DELETE /api/stacks/{name}", deleteStack(cfg))
+	api.HandleFunc("GET /api/stacks/{name}/services/{service}/logs", stackServiceLogs(cfg))
 
-	mux.HandleFunc("GET /api/systemd", listSystemd(cfg))
-	mux.HandleFunc("GET /api/systemd/{name}/logs", systemdLogs())
-	mux.HandleFunc("GET /api/systemd/{name}/content", systemdContent())
+	api.HandleFunc("GET /api/quadlets", listQuadlets(cfg))
+	api.HandleFunc("GET /api/quadlets/generator-logs", quadletGeneratorLogs())
+	api.HandleFunc("GET /api/quadlets/{filename}", getQuadlet(cfg))
+	api.HandleFunc("PUT /api/quadlets/{filename}", writeQuadlet(cfg))
+	api.HandleFunc("DELETE /api/quadlets/{filename}", deleteQuadlet(cfg))
+	api.HandleFunc("POST /api/quadlets/{filename}/start", startQuadlet())
+	api.HandleFunc("POST /api/quadlets/{filename}/stop", stopQuadlet())
+	api.HandleFunc("POST /api/quadlets/{filename}/restart", restartQuadlet())
+	api.HandleFunc("GET /api/quadlets/{filename}/logs", quadletLogs())
 
-	mux.HandleFunc("GET /api/containers", listContainers())
-	mux.HandleFunc("GET /api/containers/{id}/stats", containerStats())
-	mux.HandleFunc("GET /api/containers/{id}/logs", containerLogs())
-	mux.HandleFunc("POST /api/containers/{id}/start", startContainer())
-	mux.HandleFunc("POST /api/containers/{id}/stop", stopContainer())
-	mux.HandleFunc("POST /api/containers/{id}/restart", restartContainer())
-	mux.HandleFunc("DELETE /api/containers/{id}", removeContainer())
+	api.HandleFunc("GET /api/systemd", listSystemd(cfg))
+	api.HandleFunc("GET /api/systemd/{name}/logs", systemdLogs())
+	api.HandleFunc("GET /api/systemd/{name}/content", systemdContent())
 
-	mux.HandleFunc("GET /api/images", listImages())
-	mux.HandleFunc("DELETE /api/images/{id}", deleteImage())
-	mux.HandleFunc("POST /api/images/prune", pruneImages())
+	api.HandleFunc("GET /api/containers", listContainers())
+	api.HandleFunc("GET /api/containers/{id}/stats", containerStats())
+	api.HandleFunc("GET /api/containers/{id}/logs", containerLogs())
+	api.HandleFunc("POST /api/containers/{id}/start", startContainer())
+	api.HandleFunc("POST /api/containers/{id}/stop", stopContainer())
+	api.HandleFunc("POST /api/containers/{id}/restart", restartContainer())
+	api.HandleFunc("DELETE /api/containers/{id}", removeContainer())
 
-	mux.HandleFunc("GET /api/volumes", listVolumes())
-	mux.HandleFunc("GET /api/volumes/{name}", getVolume())
-	mux.HandleFunc("GET /api/volumes/{name}/fs/{path...}", getVolumeFs())
-	mux.HandleFunc("POST /api/volumes/{name}/fs/{path...}", createVolumeFsEntry())
-	mux.HandleFunc("PUT /api/volumes/{name}/fs/{path...}", writeVolumeFsEntry())
-	mux.HandleFunc("PATCH /api/volumes/{name}/fs/{path...}", moveVolumeFsEntry())
-	mux.HandleFunc("DELETE /api/volumes/{name}/fs/{path...}", deleteVolumeFsEntry())
+	api.HandleFunc("GET /api/images", listImages())
+	api.HandleFunc("DELETE /api/images/{id}", deleteImage())
+	api.HandleFunc("POST /api/images/prune", pruneImages())
+
+	api.HandleFunc("GET /api/volumes", listVolumes())
+	api.HandleFunc("GET /api/volumes/{name}", getVolume())
+	api.HandleFunc("GET /api/volumes/{name}/fs/{path...}", getVolumeFs())
+	api.HandleFunc("POST /api/volumes/{name}/fs/{path...}", createVolumeFsEntry())
+	api.HandleFunc("PUT /api/volumes/{name}/fs/{path...}", writeVolumeFsEntry())
+	api.HandleFunc("PATCH /api/volumes/{name}/fs/{path...}", moveVolumeFsEntry())
+	api.HandleFunc("DELETE /api/volumes/{name}/fs/{path...}", deleteVolumeFsEntry())
 
 	return mux
 }

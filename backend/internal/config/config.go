@@ -9,6 +9,7 @@ type Config struct {
 	Port       int
 	StacksDir  string
 	QuadletDir string
+	AuthFile   string
 }
 
 func Load(port int) (*Config, error) {
@@ -34,5 +35,6 @@ func Load(port int) (*Config, error) {
 		Port:       port,
 		StacksDir:  stacksDir,
 		QuadletDir: quadletDir,
+		AuthFile:   filepath.Join(xdgConfig, "podtainer", "htpasswd"),
 	}, nil
 }

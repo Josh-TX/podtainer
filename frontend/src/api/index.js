@@ -1,8 +1,13 @@
+import { authState } from './authState.js'
+
 async function request(path, opts = {}) {
   const res = await fetch('/api' + path, {
     headers: { 'Content-Type': 'application/json' },
     ...opts,
   })
+  if (res.status === 401 && path !== '/auth/status' && path !== '/auth/login') {
+    authState.authenticated = false
+  }
   const body = await res.json().catch(() => ({}))
   if (!res.ok) {
     throw new Error(body.error || res.statusText)
@@ -11,6 +16,13 @@ async function request(path, opts = {}) {
 }
 
 const enc = encodeURIComponent
+
+export const authApi = {
+  status: () => request('/auth/status'),
+  setup: (password) => request('/auth/setup', { method: 'POST', body: JSON.stringify({ password }) }),
+  login: (password) => request('/auth/login', { method: 'POST', body: JSON.stringify({ password }) }),
+  logout: () => request('/auth/logout', { method: 'POST' }),
+}
 
 export const stacksApi = {
   list: () => request('/stacks'),

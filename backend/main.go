@@ -7,6 +7,7 @@ import (
 	"net/http"
 
 	"podtainer/internal/api"
+	"podtainer/internal/auth"
 	"podtainer/internal/config"
 	"podtainer/internal/webui"
 )
@@ -20,7 +21,8 @@ func main() {
 		log.Fatalf("config: %v", err)
 	}
 
-	mux := api.NewMux(cfg)
+	a := auth.New(cfg.AuthFile)
+	mux := api.NewMux(cfg, a)
 
 	frontend, err := webui.FS()
 	if err != nil {
