@@ -97,7 +97,8 @@ onMounted(load)
         </tr>
       </tbody>
     </table>
-    <p v-if="!filteredUnits.length" class="muted">No units found.</p>
+    <p class="muted" v-if="filterText.trim()">Showing {{ filteredUnits.length }}/{{ units.length }} units</p>
+    <p class="muted" v-else>Showing {{ units.length }} units</p>
   </template>
 </template>
 

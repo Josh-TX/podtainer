@@ -50,6 +50,9 @@ async function submit() {
         <button type="submit" :aria-busy="submitting">
           {{ authState.needsSetup ? 'Set password' : 'Log in' }}
         </button>
+        <small v-if="!authState.needsSetup" style="color: var(--pico-muted-color)">
+          Forgot password? Reset it by deleting ~/.config/podtainer/htpasswd
+        </small>
       </form>
     </article>
   </main>

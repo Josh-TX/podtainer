@@ -188,8 +188,8 @@ func Content(ctx context.Context, unit string) (string, error) {
 // Validate checks a not-yet-written unit file for syntax/semantic errors via
 // `systemd-analyze verify`, which - unlike quadlet's generator - can check an
 // arbitrary file path directly without it living in a systemd search path.
-func Validate(ctx context.Context, content string) error {
-	tmp, err := os.CreateTemp("", "podtainer-unit-validate-*.service")
+func Validate(ctx context.Context, content, filename string) error {
+	tmp, err := os.CreateTemp("", "podtainer-unit-validate-*"+filepath.Ext(filename))
 	if err != nil {
 		return err
 	}
@@ -212,7 +212,7 @@ func Create(ctx context.Context, dir, filename, content string) error {
 	} else if !os.IsNotExist(err) {
 		return err
 	}
-	if err := Validate(ctx, content); err != nil {
+	if err := Validate(ctx, content, filename); err != nil {
 		return err
 	}
 	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {

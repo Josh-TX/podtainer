@@ -1,13 +1,16 @@
 <script setup>
-import { ref, computed } from 'vue'
+import { ref, computed, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { systemdApi } from '../api'
 import CodeEditor from '../components/CodeEditor.vue'
 
 const router = useRouter()
 
+const UNIT_TYPES = ['service', 'timer', 'socket', 'path', 'mount']
+
 const name = ref('')
-const filename = computed(() => name.value.trim() + '.service')
+const unitType = ref('service')
+const filename = computed(() => name.value.trim() + '.' + unitType.value)
 
 const description = ref('')
 const execStart = ref('')
@@ -39,14 +42,21 @@ const generatedFromEasy = computed(() => {
 const mode = ref('easy')
 const rawOverride = ref(null)
 const rawContent = computed({
-  get: () => rawOverride.value ?? generatedFromEasy.value,
+  get: () => rawOverride.value ?? (unitType.value === 'service' ? generatedFromEasy.value : ''),
   set: (v) => { rawOverride.value = v },
 })
-const desynced = computed(() => rawOverride.value !== null && rawOverride.value !== generatedFromEasy.value)
+const desynced = computed(
+  () => unitType.value === 'service' && rawOverride.value !== null && rawOverride.value !== generatedFromEasy.value
+)
 
 function syncFromEasy() {
   rawOverride.value = null
 }
+
+watch(unitType, () => {
+  if (unitType.value !== 'service') mode.value = 'raw'
+  rawOverride.value = null
+})
 
 const error = ref('')
 const busy = ref(false)
@@ -81,14 +91,24 @@ async function save() {
 
   <div v-if="error" class="error-banner">{{ error }}</div>
 
-  <label>
+  <label style="margin-bottom: 1.5rem">
     Unit name
-    <input v-model="name" placeholder="e.g. my-unit" />
-    <small class="muted">Saved as {{ filename }}</small>
+    <div role="group" style="margin-bottom: 0.25rem">
+      <input v-model="name" placeholder="e.g. my-unit" />
+      <select v-model="unitType" style="max-width: 9rem">
+        <option v-for="t in UNIT_TYPES" :key="t" :value="t">.{{ t }}</option>
+      </select>
+    </div>
+    <small class="muted">~/.config/systemd/user/{{ filename }}</small>
   </label>
 
   <div class="toolbar">
-    <button :class="{ secondary: mode !== 'easy' }" @click="mode = 'easy'">Easy Editor</button>
+    <button
+      :class="{ secondary: mode !== 'easy' }"
+      :disabled="unitType !== 'service'"
+      :title="unitType !== 'service' ? 'Easy editor only supports service units' : ''"
+      @click="mode = 'easy'"
+    >Easy Editor</button>
     <button :class="{ secondary: mode !== 'raw' }" @click="mode = 'raw'">Raw Editor</button>
     <span v-if="desynced" class="badge notdeployed">Desynced</span>
     <button v-if="desynced" class="secondary" @click="syncFromEasy">Sync from Easy</button>
@@ -133,3 +153,9 @@ async function save() {
 
   <CodeEditor v-else v-model="rawContent" language="unit" max-height="26rem" />
 </template>
+
+<style scoped>
+.stack-columns label {
+  margin-bottom: 0;
+}
+</style>
