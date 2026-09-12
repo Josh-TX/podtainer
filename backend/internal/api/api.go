@@ -12,6 +12,7 @@ import (
 
 	"podtainer/internal/auth"
 	"podtainer/internal/config"
+	"podtainer/internal/favorites"
 	"podtainer/internal/images"
 	"podtainer/internal/podmanx"
 	"podtainer/internal/quadlets"
@@ -51,6 +52,7 @@ func NewMux(cfg *config.Config, a *auth.Auth) *http.ServeMux {
 	api.HandleFunc("GET /api/systemd", listSystemd(cfg))
 	api.HandleFunc("GET /api/systemd/{name}/logs", systemdLogs())
 	api.HandleFunc("GET /api/systemd/{name}/content", systemdContent())
+	api.HandleFunc("PUT /api/systemd/{name}/favorite", setSystemdFavorite(cfg))
 
 	api.HandleFunc("GET /api/containers", listContainers())
 	api.HandleFunc("GET /api/containers/{id}/stats", containerStats())
@@ -298,12 +300,39 @@ func quadletGeneratorLogs() http.HandlerFunc {
 
 func listSystemd(cfg *config.Config) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		units, err := sysdunits.List(r.Context(), cfg.QuadletDir)
+		favs, err := favorites.Load(cfg.FavoritesFile)
+		if err != nil {
+			writeErr(w, 500, err)
+			return
+		}
+		opts := sysdunits.ListOptions{
+			All:      r.URL.Query().Get("all") == "true",
+			Quadlet:  r.URL.Query().Get("quadlet") == "true",
+			Favorite: r.URL.Query().Get("favorite") == "true",
+		}
+		units, err := sysdunits.List(r.Context(), cfg.QuadletDir, favs, opts)
 		if err != nil {
 			writeErr(w, 500, err)
 			return
 		}
 		writeJSON(w, units)
+	}
+}
+
+func setSystemdFavorite(cfg *config.Config) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		var body struct {
+			Favorite bool `json:"favorite"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			writeErr(w, 400, err)
+			return
+		}
+		if err := favorites.Set(cfg.FavoritesFile, r.PathValue("name"), body.Favorite); err != nil {
+			writeErr(w, 500, err)
+			return
+		}
+		writeJSON(w, map[string]bool{"favorite": body.Favorite})
 	}
 }
 

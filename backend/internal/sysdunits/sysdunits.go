@@ -1,7 +1,7 @@
-// Package sysdunits lists systemd --user units that were generated from a
-// quadlet file, identified via each unit's SourcePath rather than any
-// Podtainer-specific naming or label, so hand-authored quadlets outside
-// Podtainer show up too.
+// Package sysdunits lists systemd --user units, categorized as quadlet
+// (identified via each unit's SourcePath rather than any Podtainer-specific
+// naming or label, so hand-authored quadlets outside Podtainer show up too),
+// favorite (user-starred, see the favorites package), or neither.
 package sysdunits
 
 import (
@@ -35,10 +35,20 @@ type Unit struct {
 	// (the quadlet file that produced it).
 	FragmentPath string `json:"fragmentPath"`
 	NRestarts    int    `json:"nRestarts"`
+	IsQuadlet    bool   `json:"isQuadlet"`
+	IsFavorite   bool   `json:"isFavorite"`
 	// SinceTimestamp is when the unit's current run began (ConditionTimestamp),
 	// which stays fixed across auto-restart cycles, so it doubles as "failing since"
 	// for a unit stuck in the activating/auto-restart loop.
 	SinceTimestamp string `json:"sinceTimestamp,omitempty"`
+}
+
+// ListOptions selects which categories of unit are returned by List. All, if
+// set, overrides Quadlet/Favorite and returns every systemd --user unit.
+type ListOptions struct {
+	All      bool
+	Quadlet  bool
+	Favorite bool
 }
 
 type rawUnitFile struct {
@@ -49,9 +59,13 @@ type rawUnit struct {
 	Unit string `json:"unit"`
 }
 
-// List returns every systemd --user unit whose SourcePath lives under
-// quadletDir, i.e. every quadlet-origin unit on the system, unioned with
-// currently-loaded units that match a quadlet file's expected unit name.
+// List returns systemd --user units matching opts. A unit is considered
+// quadlet-origin if its SourcePath lives under quadletDir (or, for
+// "orphaned" units - see below - if its name matches a quadlet file's
+// expected unit name), and favorite if its name is in favorites. With
+// opts.All every unit is returned regardless of category; otherwise only
+// units matching an enabled category (Quadlet/Favorite) are returned. Every
+// returned unit still carries accurate IsQuadlet/IsFavorite flags.
 //
 // list-unit-files alone would miss "orphaned" units: ones systemd still has
 // loaded and running (or failed) in memory even though their backing file is
@@ -62,7 +76,7 @@ type rawUnit struct {
 // only admitted if their name matches a quadlet file currently present in
 // quadletDir - systemd clears SourcePath/FragmentPath for them once orphaned,
 // so that's the only way to attribute them back to a quadlet file.
-func List(ctx context.Context, quadletDir string) ([]Unit, error) {
+func List(ctx context.Context, quadletDir string, favorites map[string]bool, opts ListOptions) ([]Unit, error) {
 	fileOut, err := execx.Run(ctx, "systemctl", "--user", "list-unit-files", "--all", "--output=json", "--no-pager")
 	if err != nil {
 		return nil, err
@@ -95,7 +109,12 @@ func List(ctx context.Context, quadletDir string) ([]Unit, error) {
 		candidates[f.UnitFile] = true
 	}
 	for _, u := range loaded {
-		if _, ok := expected[u.Unit]; ok {
+		// A full loaded-unit scan is only needed for the "all"/favorite
+		// categories; otherwise only quadlet orphans (loaded but with no
+		// backing file) are worth the extra `show` call.
+		if opts.All || opts.Favorite {
+			candidates[u.Unit] = true
+		} else if _, ok := expected[u.Unit]; ok {
 			candidates[u.Unit] = true
 		}
 	}
@@ -109,12 +128,16 @@ func List(ctx context.Context, quadletDir string) ([]Unit, error) {
 		}
 		vals := parseProperties(props)
 		sourcePath := vals["SourcePath"]
-		if sourcePath == "" || !strings.HasPrefix(sourcePath, quadletDir) {
-			filename, ok := expected[name]
-			if !ok {
-				continue
+		isQuadlet := sourcePath != "" && strings.HasPrefix(sourcePath, quadletDir)
+		if !isQuadlet {
+			if filename, ok := expected[name]; ok {
+				isQuadlet = true
+				sourcePath = filepath.Join(quadletDir, filename)
 			}
-			sourcePath = filepath.Join(quadletDir, filename)
+		}
+		isFavorite := favorites[name]
+		if !opts.All && !(opts.Quadlet && isQuadlet) && !(opts.Favorite && isFavorite) {
+			continue
 		}
 		nRestarts, _ := strconv.Atoi(vals["NRestarts"])
 		var since string
@@ -130,6 +153,8 @@ func List(ctx context.Context, quadletDir string) ([]Unit, error) {
 			SourcePath:     sourcePath,
 			FragmentPath:   vals["FragmentPath"],
 			NRestarts:      nRestarts,
+			IsQuadlet:      isQuadlet,
+			IsFavorite:     isFavorite,
 			SinceTimestamp: since,
 		})
 	}

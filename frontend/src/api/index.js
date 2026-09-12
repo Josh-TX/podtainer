@@ -51,9 +51,12 @@ export const quadletsApi = {
 }
 
 export const systemdApi = {
-  list: () => request('/systemd'),
+  list: ({ all = false, quadlet = false, favorite = false } = {}) =>
+    request(`/systemd?all=${all}&quadlet=${quadlet}&favorite=${favorite}`),
   logs: (name, lines = 200) => request(`/systemd/${enc(name)}/logs?lines=${lines}`),
   content: (name) => request(`/systemd/${enc(name)}/content`),
+  setFavorite: (name, favorite) =>
+    request(`/systemd/${enc(name)}/favorite`, { method: 'PUT', body: JSON.stringify({ favorite }) }),
 }
 
 function encPath(path) {

@@ -6,10 +6,11 @@ import (
 )
 
 type Config struct {
-	Port       int
-	StacksDir  string
-	QuadletDir string
-	AuthFile   string
+	Port          int
+	StacksDir     string
+	QuadletDir    string
+	AuthFile      string
+	FavoritesFile string
 }
 
 func Load(port int) (*Config, error) {
@@ -32,9 +33,10 @@ func Load(port int) (*Config, error) {
 	}
 
 	return &Config{
-		Port:       port,
-		StacksDir:  stacksDir,
-		QuadletDir: quadletDir,
-		AuthFile:   filepath.Join(xdgConfig, "podtainer", "htpasswd"),
+		Port:          port,
+		StacksDir:     stacksDir,
+		QuadletDir:    quadletDir,
+		AuthFile:      filepath.Join(xdgConfig, "podtainer", "htpasswd"),
+		FavoritesFile: filepath.Join(xdgConfig, "podtainer", "systemd-favorites.txt"),
 	}, nil
 }
