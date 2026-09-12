@@ -53,6 +53,7 @@ export const quadletsApi = {
 export const systemdApi = {
   list: ({ all = false, quadlet = false, favorite = false } = {}) =>
     request(`/systemd?all=${all}&quadlet=${quadlet}&favorite=${favorite}`),
+  create: (filename, content) => request('/systemd', { method: 'POST', body: JSON.stringify({ filename, content }) }),
   logs: (name, lines = 200) => request(`/systemd/${enc(name)}/logs?lines=${lines}`),
   content: (name) => request(`/systemd/${enc(name)}/content`),
   writeContent: (name, content) =>
@@ -64,6 +65,7 @@ export const systemdApi = {
   restart: (name) => request(`/systemd/${enc(name)}/restart`, { method: 'POST' }),
   enable: (name) => request(`/systemd/${enc(name)}/enable`, { method: 'POST' }),
   disable: (name) => request(`/systemd/${enc(name)}/disable`, { method: 'POST' }),
+  delete: (name) => request(`/systemd/${enc(name)}`, { method: 'DELETE' }),
 }
 
 function encPath(path) {

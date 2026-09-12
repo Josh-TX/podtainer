@@ -2,15 +2,11 @@
 import { ref, computed, watch, onMounted } from 'vue'
 import { systemdApi } from '../api'
 import { unitBadgeClass, unitStatusLabel, statusTitle } from '../unitBadge'
+import { showQuadlet, showFavorite, showAll, filterText } from '../systemdFilterState'
 
 const units = ref([])
 const error = ref('')
 const loading = ref(true)
-
-const showQuadlet = ref(true)
-const showFavorite = ref(true)
-const showAll = ref(false)
-const filterText = ref('')
 
 const filteredUnits = computed(() => {
   const q = filterText.value.trim().toLowerCase()
@@ -51,7 +47,10 @@ onMounted(load)
 </script>
 
 <template>
-  <h1>Systemd</h1>
+  <div class="page-header">
+    <h1>Systemd</h1>
+    <RouterLink to="/systemd/new" role="button">New Unit</RouterLink>
+  </div>
 
   <div class="toolbar systemd-filters">
     <input type="text" v-model="filterText" placeholder="Filter by name or description" />

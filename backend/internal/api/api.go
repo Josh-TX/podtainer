@@ -50,6 +50,7 @@ func NewMux(cfg *config.Config, a *auth.Auth) *http.ServeMux {
 	api.HandleFunc("GET /api/quadlets/{filename}/logs", quadletLogs())
 
 	api.HandleFunc("GET /api/systemd", listSystemd(cfg))
+	api.HandleFunc("POST /api/systemd", createSystemd(cfg))
 	api.HandleFunc("GET /api/systemd/{name}/logs", systemdLogs())
 	api.HandleFunc("GET /api/systemd/{name}/content", systemdContent())
 	api.HandleFunc("PUT /api/systemd/{name}/content", writeSystemdContent())
@@ -59,6 +60,7 @@ func NewMux(cfg *config.Config, a *auth.Auth) *http.ServeMux {
 	api.HandleFunc("POST /api/systemd/{name}/restart", restartSystemd())
 	api.HandleFunc("POST /api/systemd/{name}/enable", enableSystemd())
 	api.HandleFunc("POST /api/systemd/{name}/disable", disableSystemd())
+	api.HandleFunc("DELETE /api/systemd/{name}", deleteSystemd())
 
 	api.HandleFunc("GET /api/containers", listContainers())
 	api.HandleFunc("GET /api/containers/{id}/stats", containerStats())
@@ -325,6 +327,24 @@ func listSystemd(cfg *config.Config) http.HandlerFunc {
 	}
 }
 
+func createSystemd(cfg *config.Config) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		var body struct {
+			Filename string `json:"filename"`
+			Content  string `json:"content"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			writeErr(w, 400, err)
+			return
+		}
+		if err := sysdunits.Create(r.Context(), cfg.SystemdUnitDir, body.Filename, body.Content); err != nil {
+			writeErr(w, 500, err)
+			return
+		}
+		writeJSON(w, map[string]string{"status": "created"})
+	}
+}
+
 func setSystemdFavorite(cfg *config.Config) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		var body struct {
@@ -428,6 +448,16 @@ func disableSystemd() http.HandlerFunc {
 			return
 		}
 		writeJSON(w, map[string]string{"status": "disabled"})
+	}
+}
+
+func deleteSystemd() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if err := sysdunits.Delete(r.Context(), r.PathValue("name")); err != nil {
+			writeErr(w, 500, err)
+			return
+		}
+		writeJSON(w, map[string]string{"status": "deleted"})
 	}
 }
 

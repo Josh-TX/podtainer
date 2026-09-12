@@ -29,6 +29,7 @@ const emit = defineEmits(['update:modelValue'])
 
 const el = ref(null)
 const view = shallowRef(null)
+let syncingFromProp = false
 
 function languageExtension() {
   if (props.language === 'yaml') return yaml()
@@ -44,7 +45,7 @@ function scrollToBottom() {
 
 onMounted(() => {
   const updateListener = EditorView.updateListener.of((update) => {
-    if (update.docChanged && !props.readonly) {
+    if (update.docChanged && !props.readonly && !syncingFromProp) {
       emit('update:modelValue', update.state.doc.toString())
     }
   })
@@ -86,9 +87,11 @@ watch(
     if (!view.value) return
     const current = view.value.state.doc.toString()
     if (newValue === current) return
+    syncingFromProp = true
     view.value.dispatch({
       changes: { from: 0, to: current.length, insert: newValue },
     })
+    syncingFromProp = false
     if (props.autoscroll) scrollToBottom()
   }
 )

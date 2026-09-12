@@ -1,10 +1,12 @@
 <script setup>
 import { ref, computed, onMounted } from 'vue'
+import { useRouter } from 'vue-router'
 import { systemdApi, quadletsApi, containersApi } from '../api'
 import { unitBadgeClass, unitStatusLabel, statusTitle, isOrphaned } from '../unitBadge'
 import CodeEditor from '../components/CodeEditor.vue'
 
 const props = defineProps({ name: { type: String, required: true } })
+const router = useRouter()
 
 const unit = ref(null)
 const content = ref('')
@@ -71,6 +73,19 @@ async function action(fn) {
   }
 }
 
+async function remove() {
+  if (!confirm(`Delete unit "${props.name}"? This stops the service and removes the unit file.`)) return
+  error.value = ''
+  busy.value = true
+  try {
+    await systemdApi.delete(props.name)
+    router.push('/systemd')
+  } catch (e) {
+    error.value = e.message
+    busy.value = false
+  }
+}
+
 async function viewLogs() {
   showLogs.value = !showLogs.value
   if (!showLogs.value) return
@@ -110,6 +125,7 @@ onMounted(load)
           <li>
             <a href="#" :class="{ disabled: busy || !canToggleEnable || !isEnabled }" :aria-disabled="busy || !canToggleEnable || !isEnabled" @click.prevent="!busy && canToggleEnable && isEnabled && action(systemdApi.disable)">Disable</a>
           </li>
+          <li v-if="unit.isEditable"><a href="#" class="danger-link" @click.prevent="!busy && remove()">Delete</a></li>
         </ul>
       </details>
     </div>

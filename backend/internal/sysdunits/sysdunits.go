@@ -185,6 +185,46 @@ func Content(ctx context.Context, unit string) (string, error) {
 	return execx.Run(ctx, "systemctl", "--user", "cat", unit)
 }
 
+// Validate checks a not-yet-written unit file for syntax/semantic errors via
+// `systemd-analyze verify`, which - unlike quadlet's generator - can check an
+// arbitrary file path directly without it living in a systemd search path.
+func Validate(ctx context.Context, content string) error {
+	tmp, err := os.CreateTemp("", "podtainer-unit-validate-*.service")
+	if err != nil {
+		return err
+	}
+	defer os.Remove(tmp.Name())
+	_, werr := tmp.WriteString(content)
+	tmp.Close()
+	if werr != nil {
+		return werr
+	}
+	_, err = execx.Run(ctx, "systemd-analyze", "--user", "verify", tmp.Name())
+	return err
+}
+
+// Create writes a brand-new unit file to dir, refusing to clobber an
+// existing one, then reloads systemd and starts the unit.
+func Create(ctx context.Context, dir, filename, content string) error {
+	path := filepath.Join(dir, filename)
+	if _, err := os.Stat(path); err == nil {
+		return fmt.Errorf("a unit file named %q already exists", filename)
+	} else if !os.IsNotExist(err) {
+		return err
+	}
+	if err := Validate(ctx, content); err != nil {
+		return err
+	}
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		return err
+	}
+	if _, err := execx.Run(ctx, "systemctl", "--user", "daemon-reload"); err != nil {
+		return err
+	}
+	_, err := execx.Run(ctx, "systemctl", "--user", "start", filename)
+	return err
+}
+
 // WriteContent overwrites a static unit file's raw content and reloads
 // systemd so the change takes effect. Units generated at runtime (their
 // FragmentPath lives under /run, e.g. quadlet-generated .service files) are
@@ -203,6 +243,31 @@ func WriteContent(ctx context.Context, unit, content string) error {
 		return fmt.Errorf("unit %q is generated at runtime and can't be edited directly", unit)
 	}
 	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		return err
+	}
+	_, err = execx.Run(ctx, "systemctl", "--user", "daemon-reload")
+	return err
+}
+
+// Delete stops and disables the unit, then removes its unit file and
+// reloads systemd. Units generated at runtime (FragmentPath under /run,
+// e.g. quadlet-generated .service files) are rejected since there's no
+// static file to remove.
+func Delete(ctx context.Context, unit string) error {
+	props, err := execx.Run(ctx, "systemctl", "--user", "show", unit, "--property=FragmentPath")
+	if err != nil {
+		return err
+	}
+	path := parseProperties(props)["FragmentPath"]
+	if path == "" {
+		return fmt.Errorf("unit %q has no unit file to delete", unit)
+	}
+	if strings.HasPrefix(path, "/run") {
+		return fmt.Errorf("unit %q is generated at runtime and can't be deleted directly", unit)
+	}
+	_, _ = execx.Run(ctx, "systemctl", "--user", "stop", unit)
+	_, _ = execx.Run(ctx, "systemctl", "--user", "disable", unit)
+	if err := os.Remove(path); err != nil {
 		return err
 	}
 	_, err = execx.Run(ctx, "systemctl", "--user", "daemon-reload")
