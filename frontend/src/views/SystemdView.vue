@@ -70,6 +70,7 @@ onMounted(load)
           <th>Unit</th>
           <th>Active</th>
           <th>Sub</th>
+          <th>File State</th>
           <th>Description</th>
           <th>Favorite</th>
         </tr>
@@ -79,6 +80,7 @@ onMounted(load)
           <td><RouterLink class="row-link" :to="`/systemd/${encodeURIComponent(u.name)}`">{{ u.name }}</RouterLink></td>
           <td><span :class="unitBadgeClass(u)" :title="statusTitle(u)">{{ unitStatusLabel(u) }}</span></td>
           <td class="muted">{{ u.sub }}</td>
+          <td class="muted">{{ u.unitFileState }}</td>
           <td class="muted">{{ u.description }}</td>
           <td style="padding-top: 5px; padding-bottom: 0px">
             <button

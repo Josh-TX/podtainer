@@ -7,6 +7,7 @@ package sysdunits
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"sort"
@@ -41,6 +42,15 @@ type Unit struct {
 	// which stays fixed across auto-restart cycles, so it doubles as "failing since"
 	// for a unit stuck in the activating/auto-restart loop.
 	SinceTimestamp string `json:"sinceTimestamp,omitempty"`
+	// UnitFileState is systemctl's enabled/disabled/static/masked/etc.
+	// classification, empty for units with no backing unit file entry
+	// (e.g. orphans).
+	UnitFileState string `json:"unitFileState"`
+	// IsEditable is true for units backed by a real file outside /run -
+	// units generated at runtime (quadlet-generated .service files, in
+	// particular) live under /run and get overwritten on the next
+	// daemon-reload, so editing them directly is pointless.
+	IsEditable bool `json:"isEditable"`
 }
 
 // ListOptions selects which categories of unit are returned by List. All, if
@@ -53,6 +63,7 @@ type ListOptions struct {
 
 type rawUnitFile struct {
 	UnitFile string `json:"unit_file"`
+	State    string `json:"state"`
 }
 
 type rawUnit struct {
@@ -104,9 +115,11 @@ func List(ctx context.Context, quadletDir string, favorites map[string]bool, opt
 		return nil, err
 	}
 
+	fileStates := map[string]string{}
 	candidates := map[string]bool{}
 	for _, f := range files {
 		candidates[f.UnitFile] = true
+		fileStates[f.UnitFile] = f.State
 	}
 	for _, u := range loaded {
 		// A full loaded-unit scan is only needed for the "all"/favorite
@@ -144,6 +157,7 @@ func List(ctx context.Context, quadletDir string, favorites map[string]bool, opt
 		if t, err := time.Parse(systemdTimestampLayout, vals["ConditionTimestamp"]); err == nil {
 			since = t.Format(time.RFC3339)
 		}
+		fragmentPath := vals["FragmentPath"]
 		units = append(units, Unit{
 			Name:           name,
 			Load:           vals["LoadState"],
@@ -151,11 +165,13 @@ func List(ctx context.Context, quadletDir string, favorites map[string]bool, opt
 			Sub:            vals["SubState"],
 			Description:    vals["Description"],
 			SourcePath:     sourcePath,
-			FragmentPath:   vals["FragmentPath"],
+			FragmentPath:   fragmentPath,
 			NRestarts:      nRestarts,
 			IsQuadlet:      isQuadlet,
 			IsFavorite:     isFavorite,
 			SinceTimestamp: since,
+			UnitFileState:  fileStates[name],
+			IsEditable:     fragmentPath != "" && !strings.HasPrefix(fragmentPath, "/run"),
 		})
 	}
 	sort.Slice(units, func(i, j int) bool { return units[i].Name < units[j].Name })
@@ -167,6 +183,55 @@ func List(ctx context.Context, quadletDir string, favorites map[string]bool, opt
 // .service file systemd actually loads, not the source .container/.network file.
 func Content(ctx context.Context, unit string) (string, error) {
 	return execx.Run(ctx, "systemctl", "--user", "cat", unit)
+}
+
+// WriteContent overwrites a static unit file's raw content and reloads
+// systemd so the change takes effect. Units generated at runtime (their
+// FragmentPath lives under /run, e.g. quadlet-generated .service files) are
+// rejected rather than trusting the caller's IsEditable check, since editing
+// them would just be silently discarded on the next daemon-reload anyway.
+func WriteContent(ctx context.Context, unit, content string) error {
+	props, err := execx.Run(ctx, "systemctl", "--user", "show", unit, "--property=FragmentPath")
+	if err != nil {
+		return err
+	}
+	path := parseProperties(props)["FragmentPath"]
+	if path == "" {
+		return fmt.Errorf("unit %q has no unit file to edit", unit)
+	}
+	if strings.HasPrefix(path, "/run") {
+		return fmt.Errorf("unit %q is generated at runtime and can't be edited directly", unit)
+	}
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		return err
+	}
+	_, err = execx.Run(ctx, "systemctl", "--user", "daemon-reload")
+	return err
+}
+
+func Start(ctx context.Context, unit string) error {
+	_, err := execx.Run(ctx, "systemctl", "--user", "start", unit)
+	return err
+}
+
+func Stop(ctx context.Context, unit string) error {
+	_, err := execx.Run(ctx, "systemctl", "--user", "stop", unit)
+	return err
+}
+
+func Restart(ctx context.Context, unit string) error {
+	_, err := execx.Run(ctx, "systemctl", "--user", "restart", unit)
+	return err
+}
+
+func Enable(ctx context.Context, unit string) error {
+	_, err := execx.Run(ctx, "systemctl", "--user", "enable", unit)
+	return err
+}
+
+func Disable(ctx context.Context, unit string) error {
+	_, err := execx.Run(ctx, "systemctl", "--user", "disable", unit)
+	return err
 }
 
 func parseProperties(s string) map[string]string {

@@ -55,8 +55,15 @@ export const systemdApi = {
     request(`/systemd?all=${all}&quadlet=${quadlet}&favorite=${favorite}`),
   logs: (name, lines = 200) => request(`/systemd/${enc(name)}/logs?lines=${lines}`),
   content: (name) => request(`/systemd/${enc(name)}/content`),
+  writeContent: (name, content) =>
+    request(`/systemd/${enc(name)}/content`, { method: 'PUT', body: JSON.stringify({ content }) }),
   setFavorite: (name, favorite) =>
     request(`/systemd/${enc(name)}/favorite`, { method: 'PUT', body: JSON.stringify({ favorite }) }),
+  start: (name) => request(`/systemd/${enc(name)}/start`, { method: 'POST' }),
+  stop: (name) => request(`/systemd/${enc(name)}/stop`, { method: 'POST' }),
+  restart: (name) => request(`/systemd/${enc(name)}/restart`, { method: 'POST' }),
+  enable: (name) => request(`/systemd/${enc(name)}/enable`, { method: 'POST' }),
+  disable: (name) => request(`/systemd/${enc(name)}/disable`, { method: 'POST' }),
 }
 
 function encPath(path) {

@@ -1,5 +1,5 @@
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { systemdApi, quadletsApi, containersApi } from '../api'
 import { unitBadgeClass, unitStatusLabel, statusTitle, isOrphaned } from '../unitBadge'
 import CodeEditor from '../components/CodeEditor.vue'
@@ -12,14 +12,19 @@ const meta = ref(null)
 const container = ref(null)
 const error = ref('')
 const loading = ref(true)
+const busy = ref(false)
 const logs = ref('')
 const showLogs = ref(false)
+
+const isRunning = computed(() => !!unit.value && !['inactive', 'failed'].includes(unit.value.active))
+const isEnabled = computed(() => ['enabled', 'enabled-runtime'].includes(unit.value?.unitFileState))
+const canToggleEnable = computed(() => ['enabled', 'enabled-runtime', 'disabled', 'linked', 'linked-runtime'].includes(unit.value?.unitFileState))
 
 async function load() {
   error.value = ''
   loading.value = true
   try {
-    const units = await systemdApi.list()
+    const units = await systemdApi.list({ all: true })
     unit.value = units.find((u) => u.name === props.name) || null
     if (unit.value) {
       const orphaned = isOrphaned(unit.value)
@@ -37,6 +42,32 @@ async function load() {
     error.value = e.message
   } finally {
     loading.value = false
+  }
+}
+
+async function save() {
+  error.value = ''
+  busy.value = true
+  try {
+    await systemdApi.writeContent(props.name, content.value)
+    await load()
+  } catch (e) {
+    error.value = e.message
+  } finally {
+    busy.value = false
+  }
+}
+
+async function action(fn) {
+  error.value = ''
+  busy.value = true
+  try {
+    await fn(props.name)
+    await load()
+  } catch (e) {
+    error.value = e.message
+  } finally {
+    busy.value = false
   }
 }
 
@@ -59,7 +90,29 @@ onMounted(load)
     <h1 style="margin-bottom: 0.5rem">
       {{ name }}
       <span v-if="unit" :class="unitBadgeClass(unit)" :title="statusTitle(unit)">{{ unitStatusLabel(unit) }}</span>
+      <span v-if="unit" class="badge">{{ unit.unitFileState }}</span>
     </h1>
+    <div v-if="unit" class="toolbar" style="margin-bottom: 0">
+      <button v-if="unit.isEditable" :disabled="busy" @click="save">Save</button>
+      <details class="dropdown">
+        <summary role="button" class="secondary">More Options</summary>
+        <ul>
+          <li>
+            <a href="#" :class="{ disabled: busy || isRunning }" :aria-disabled="busy || isRunning" @click.prevent="!busy && !isRunning && action(systemdApi.start)">Start</a>
+          </li>
+          <li>
+            <a href="#" :class="{ disabled: busy || !isRunning }" :aria-disabled="busy || !isRunning" @click.prevent="!busy && isRunning && action(systemdApi.stop)">Stop</a>
+          </li>
+          <li><a href="#" @click.prevent="!busy && action(systemdApi.restart)">Restart</a></li>
+          <li>
+            <a href="#" :class="{ disabled: busy || !canToggleEnable || isEnabled }" :aria-disabled="busy || !canToggleEnable || isEnabled" @click.prevent="!busy && canToggleEnable && !isEnabled && action(systemdApi.enable)">Enable</a>
+          </li>
+          <li>
+            <a href="#" :class="{ disabled: busy || !canToggleEnable || !isEnabled }" :aria-disabled="busy || !canToggleEnable || !isEnabled" @click.prevent="!busy && canToggleEnable && isEnabled && action(systemdApi.disable)">Disable</a>
+          </li>
+        </ul>
+      </details>
+    </div>
   </div>
 
   <div v-if="error" class="error-banner">{{ error }}</div>
@@ -75,7 +128,7 @@ onMounted(load)
     <div class="stack-columns">
       <div class="col">
         <p v-if="isOrphaned(unit)" class="muted">No unit file to display.</p>
-        <CodeEditor v-else :model-value="content" language="unit" readonly />
+        <CodeEditor v-else v-model="content" language="unit" :readonly="!unit.isEditable" />
       </div>
 
       <div class="col">
@@ -106,3 +159,10 @@ onMounted(load)
     </div>
   </template>
 </template>
+
+<style scoped>
+.dropdown a.disabled {
+  color: var(--pico-muted-color);
+  pointer-events: none;
+}
+</style>

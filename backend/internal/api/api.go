@@ -52,7 +52,13 @@ func NewMux(cfg *config.Config, a *auth.Auth) *http.ServeMux {
 	api.HandleFunc("GET /api/systemd", listSystemd(cfg))
 	api.HandleFunc("GET /api/systemd/{name}/logs", systemdLogs())
 	api.HandleFunc("GET /api/systemd/{name}/content", systemdContent())
+	api.HandleFunc("PUT /api/systemd/{name}/content", writeSystemdContent())
 	api.HandleFunc("PUT /api/systemd/{name}/favorite", setSystemdFavorite(cfg))
+	api.HandleFunc("POST /api/systemd/{name}/start", startSystemd())
+	api.HandleFunc("POST /api/systemd/{name}/stop", stopSystemd())
+	api.HandleFunc("POST /api/systemd/{name}/restart", restartSystemd())
+	api.HandleFunc("POST /api/systemd/{name}/enable", enableSystemd())
+	api.HandleFunc("POST /api/systemd/{name}/disable", disableSystemd())
 
 	api.HandleFunc("GET /api/containers", listContainers())
 	api.HandleFunc("GET /api/containers/{id}/stats", containerStats())
@@ -355,6 +361,73 @@ func systemdContent() http.HandlerFunc {
 			return
 		}
 		writeJSON(w, map[string]string{"content": out})
+	}
+}
+
+func writeSystemdContent() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		var body struct {
+			Content string `json:"content"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			writeErr(w, 400, err)
+			return
+		}
+		if err := sysdunits.WriteContent(r.Context(), r.PathValue("name"), body.Content); err != nil {
+			writeErr(w, 500, err)
+			return
+		}
+		writeJSON(w, map[string]string{"status": "saved"})
+	}
+}
+
+func startSystemd() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if err := sysdunits.Start(r.Context(), r.PathValue("name")); err != nil {
+			writeErr(w, 500, err)
+			return
+		}
+		writeJSON(w, map[string]string{"status": "started"})
+	}
+}
+
+func stopSystemd() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if err := sysdunits.Stop(r.Context(), r.PathValue("name")); err != nil {
+			writeErr(w, 500, err)
+			return
+		}
+		writeJSON(w, map[string]string{"status": "stopped"})
+	}
+}
+
+func restartSystemd() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if err := sysdunits.Restart(r.Context(), r.PathValue("name")); err != nil {
+			writeErr(w, 500, err)
+			return
+		}
+		writeJSON(w, map[string]string{"status": "restarted"})
+	}
+}
+
+func enableSystemd() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if err := sysdunits.Enable(r.Context(), r.PathValue("name")); err != nil {
+			writeErr(w, 500, err)
+			return
+		}
+		writeJSON(w, map[string]string{"status": "enabled"})
+	}
+}
+
+func disableSystemd() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if err := sysdunits.Disable(r.Context(), r.PathValue("name")); err != nil {
+			writeErr(w, 500, err)
+			return
+		}
+		writeJSON(w, map[string]string{"status": "disabled"})
 	}
 }
 
