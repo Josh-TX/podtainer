@@ -9,6 +9,7 @@ import (
 	"podtainer/internal/api"
 	"podtainer/internal/auth"
 	"podtainer/internal/config"
+	"podtainer/internal/shellsvc"
 	"podtainer/internal/webui"
 )
 
@@ -22,7 +23,9 @@ func main() {
 	}
 
 	a := auth.New(cfg.AuthFile)
-	mux := api.NewMux(cfg, a)
+	shellMgr := shellsvc.NewManager()
+	execMgr := shellsvc.NewManager()
+	mux := api.NewMux(cfg, a, shellMgr, execMgr)
 
 	frontend, err := webui.FS()
 	if err != nil {

@@ -11,6 +11,7 @@ import ContainerDetailView from './views/ContainerDetailView.vue'
 import ImagesView from './views/ImagesView.vue'
 import VolumesView from './views/VolumesView.vue'
 import VolumeDetailView from './views/VolumeDetailView.vue'
+import ShellView from './views/ShellView.vue'
 
 export default createRouter({
   history: createWebHistory(),
@@ -29,5 +30,6 @@ export default createRouter({
     { path: '/images', component: ImagesView },
     { path: '/volumes', component: VolumesView },
     { path: '/volumes/:name', component: VolumeDetailView, props: true },
+    { path: '/shell', component: ShellView },
   ],
 })

@@ -109,6 +109,16 @@ export const imagesApi = {
   prune: (all) => request(`/images/prune?all=${all ? '1' : '0'}`, { method: 'POST' }),
 }
 
+export const shellApi = {
+  list: () => request('/shell/sessions'),
+  create: () => request('/shell/sessions', { method: 'POST' }),
+  close: (id) => request(`/shell/sessions/${enc(id)}`, { method: 'DELETE' }),
+  wsUrl: (id) => {
+    const proto = location.protocol === 'https:' ? 'wss' : 'ws'
+    return `${proto}://${location.host}/api/shell/sessions/${enc(id)}/ws`
+  },
+}
+
 export const containersApi = {
   list: () => request('/containers'),
   stats: (id) => request(`/containers/${enc(id)}/stats`),
@@ -117,4 +127,13 @@ export const containersApi = {
   stop: (id) => request(`/containers/${enc(id)}/stop`, { method: 'POST' }),
   restart: (id) => request(`/containers/${enc(id)}/restart`, { method: 'POST' }),
   remove: (id) => request(`/containers/${enc(id)}`, { method: 'DELETE' }),
+}
+
+export const containerExecApi = {
+  create: (containerId) => request(`/containers/${enc(containerId)}/exec`, { method: 'POST' }),
+  close: (id) => request(`/containers/exec/${enc(id)}`, { method: 'DELETE' }),
+  wsUrl: (id) => {
+    const proto = location.protocol === 'https:' ? 'wss' : 'ws'
+    return `${proto}://${location.host}/api/containers/exec/${enc(id)}/ws`
+  },
 }

@@ -6,7 +6,7 @@ import { authState } from './api/authState.js'
 import LoginView from './views/LoginView.vue'
 
 const route = useRoute()
-const sections = ['stacks', 'quadlets', 'systemd', 'containers', 'images', 'volumes']
+const sections = ['stacks', 'quadlets', 'systemd', 'containers', 'images', 'volumes', 'shell']
 const activeSection = computed(() => sections.find(s => route.path.startsWith(`/${s}`)))
 
 async function refreshAuth() {
@@ -27,7 +27,7 @@ onMounted(refreshAuth)
 <template>
   <template v-if="!authState.checked"></template>
   <LoginView v-else-if="!authState.authenticated" />
-  <template v-else>
+  <div v-else class="app-shell">
     <header class="container-fluid" style="padding-right: 0;">
       <nav>
         <ul>
@@ -40,6 +40,7 @@ onMounted(refreshAuth)
           <li :class="{ active: activeSection === 'containers' }"><RouterLink to="/containers">Containers</RouterLink></li>
           <li :class="{ active: activeSection === 'images' }"><RouterLink to="/images">Images</RouterLink></li>
           <li :class="{ active: activeSection === 'volumes' }"><RouterLink to="/volumes">Volumes</RouterLink></li>
+          <li :class="{ active: activeSection === 'shell' }"><RouterLink to="/shell">Shell</RouterLink></li>
         </ul>
         <ul style="margin-left: auto; margin-right: 0;">
           <li style="padding: 0;">
@@ -56,10 +57,23 @@ onMounted(refreshAuth)
     <main class="container-fluid">
       <RouterView />
     </main>
-  </template>
+  </div>
 </template>
 
 <style scoped>
+.app-shell {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+.app-shell > header {
+  flex: none;
+}
+.app-shell > main {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+}
 nav details.dropdown > summary::after {
   display: none;
 }

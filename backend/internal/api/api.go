@@ -9,6 +9,9 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
+
+	"github.com/coder/websocket"
 
 	"podtainer/internal/auth"
 	"podtainer/internal/config"
@@ -16,6 +19,7 @@ import (
 	"podtainer/internal/images"
 	"podtainer/internal/podmanx"
 	"podtainer/internal/quadlets"
+	"podtainer/internal/shellsvc"
 	"podtainer/internal/stacks"
 	"podtainer/internal/sysdunits"
 	"podtainer/internal/volumes"
@@ -23,7 +27,7 @@ import (
 
 // NewMux wires the API. Everything under /api/auth is reachable without a
 // session (that's how you get one); every other /api route requires one.
-func NewMux(cfg *config.Config, a *auth.Auth) *http.ServeMux {
+func NewMux(cfg *config.Config, a *auth.Auth, shellMgr *shellsvc.Manager, execMgr *shellsvc.Manager) *http.ServeMux {
 	mux := http.NewServeMux()
 	api := http.NewServeMux()
 
@@ -69,6 +73,9 @@ func NewMux(cfg *config.Config, a *auth.Auth) *http.ServeMux {
 	api.HandleFunc("POST /api/containers/{id}/stop", stopContainer())
 	api.HandleFunc("POST /api/containers/{id}/restart", restartContainer())
 	api.HandleFunc("DELETE /api/containers/{id}", removeContainer())
+	api.HandleFunc("POST /api/containers/{id}/exec", createContainerExec(execMgr))
+	api.HandleFunc("DELETE /api/containers/exec/{id}", closeShellSession(execMgr))
+	api.HandleFunc("GET /api/containers/exec/{id}/ws", shellSessionWS(execMgr))
 
 	api.HandleFunc("GET /api/images", listImages())
 	api.HandleFunc("DELETE /api/images/{id}", deleteImage())
@@ -81,6 +88,11 @@ func NewMux(cfg *config.Config, a *auth.Auth) *http.ServeMux {
 	api.HandleFunc("PUT /api/volumes/{name}/fs/{path...}", writeVolumeFsEntry())
 	api.HandleFunc("PATCH /api/volumes/{name}/fs/{path...}", moveVolumeFsEntry())
 	api.HandleFunc("DELETE /api/volumes/{name}/fs/{path...}", deleteVolumeFsEntry())
+
+	api.HandleFunc("GET /api/shell/sessions", listShellSessions(shellMgr))
+	api.HandleFunc("POST /api/shell/sessions", createShellSession(shellMgr))
+	api.HandleFunc("DELETE /api/shell/sessions/{id}", closeShellSession(shellMgr))
+	api.HandleFunc("GET /api/shell/sessions/{id}/ws", shellSessionWS(shellMgr))
 
 	return mux
 }
@@ -536,6 +548,17 @@ func removeContainer() http.HandlerFunc {
 	}
 }
 
+func createContainerExec(mgr *shellsvc.Manager) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		s, err := mgr.CreateExec(r.PathValue("id"))
+		if err != nil {
+			writeErr(w, 500, err)
+			return
+		}
+		writeJSON(w, shellSessionRow{ID: s.ID, CreatedAt: s.CreatedAt})
+	}
+}
+
 // --- images ---
 
 // imageRow is the images list's response shape: each image row carries the
@@ -813,5 +836,91 @@ func deleteVolumeFsEntry() http.HandlerFunc {
 			return
 		}
 		writeJSON(w, map[string]string{"status": "deleted"})
+	}
+}
+
+// --- shell ---
+
+type shellSessionRow struct {
+	ID        string    `json:"id"`
+	CreatedAt time.Time `json:"createdAt"`
+}
+
+func listShellSessions(mgr *shellsvc.Manager) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		sessions := mgr.List()
+		rows := make([]shellSessionRow, 0, len(sessions))
+		for _, s := range sessions {
+			rows = append(rows, shellSessionRow{ID: s.ID, CreatedAt: s.CreatedAt})
+		}
+		writeJSON(w, rows)
+	}
+}
+
+func createShellSession(mgr *shellsvc.Manager) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		s, err := mgr.Create()
+		if err != nil {
+			writeErr(w, 500, err)
+			return
+		}
+		writeJSON(w, shellSessionRow{ID: s.ID, CreatedAt: s.CreatedAt})
+	}
+}
+
+func closeShellSession(mgr *shellsvc.Manager) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if !mgr.Close(r.PathValue("id")) {
+			writeErr(w, 404, fmt.Errorf("session not found"))
+			return
+		}
+		writeJSON(w, map[string]string{"status": "closed"})
+	}
+}
+
+// shellSessionWS upgrades to a websocket carrying raw PTY bytes to the
+// client (binary frames) and JSON control messages from the client (input
+// keystrokes, terminal resizes).
+func shellSessionWS(mgr *shellsvc.Manager) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		s, ok := mgr.Get(r.PathValue("id"))
+		if !ok {
+			http.Error(w, "session not found", http.StatusNotFound)
+			return
+		}
+		conn, err := websocket.Accept(w, r, nil)
+		if err != nil {
+			return
+		}
+		defer conn.CloseNow()
+
+		ctx := r.Context()
+		s.Attach(ctx, conn)
+		defer s.Detach(conn)
+
+		for {
+			typ, data, err := conn.Read(ctx)
+			if err != nil {
+				return
+			}
+			if typ != websocket.MessageText {
+				continue
+			}
+			var msg struct {
+				Type string `json:"type"`
+				Data string `json:"data"`
+				Cols int    `json:"cols"`
+				Rows int    `json:"rows"`
+			}
+			if err := json.Unmarshal(data, &msg); err != nil {
+				continue
+			}
+			switch msg.Type {
+			case "input":
+				s.Write([]byte(msg.Data))
+			case "resize":
+				s.Resize(msg.Rows, msg.Cols)
+			}
+		}
 	}
 }

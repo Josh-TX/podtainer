@@ -1,8 +1,10 @@
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
 import { useRouter } from 'vue-router'
-import { containersApi } from '../api'
+import { containersApi, containerExecApi } from '../api'
 import CodeEditor from '../components/CodeEditor.vue'
+import ShellTerminal from '../components/ShellTerminal.vue'
+import NavButtons from '../components/NavButtons.vue'
 
 const props = defineProps({ id: { type: String, required: true } })
 const router = useRouter()
@@ -13,6 +15,42 @@ const logs = ref('')
 const error = ref('')
 const loading = ref(true)
 let firstLoad = true
+
+const tab = ref('logs')
+const execSessionId = ref(null)
+const execError = ref('')
+
+const tabOptions = computed(() => [
+  { label: 'Logs', value: 'logs' },
+  {
+    label: 'Console',
+    value: 'console',
+    disabled: container.value?.state !== 'running',
+    title: container.value?.state !== 'running' ? 'Container must be running' : '',
+  },
+])
+
+async function selectTab(value) {
+  tab.value = value
+  if (value === 'console') await openConsole()
+}
+
+async function openConsole() {
+  if (execSessionId.value) return
+  execError.value = ''
+  try {
+    const s = await containerExecApi.create(props.id)
+    execSessionId.value = s.id
+  } catch (e) {
+    execError.value = e.message
+  }
+}
+
+onBeforeUnmount(() => {
+  if (execSessionId.value) {
+    containerExecApi.close(execSessionId.value).catch(() => {})
+  }
+})
 
 async function load() {
   error.value = ''
@@ -64,31 +102,51 @@ onMounted(load)
 </script>
 
 <template>
-  <div class="page-header">
-    <h1>{{ container?.names?.[0] || id.slice(0, 12) }}</h1>
-    <RouterLink to="/containers" role="button" class="secondary">Back</RouterLink>
+  <div class="container-detail-view">
+    <div class="page-header">
+      <h1>{{ container?.names?.[0] || id.slice(0, 12) }}</h1>
+      <RouterLink to="/containers" role="button" class="secondary">Back</RouterLink>
+    </div>
+
+    <div v-if="error" class="error-banner">{{ error }}</div>
+    <p v-else-if="loading" aria-busy="true">Loading…</p>
+    <p v-else-if="!container" class="muted">Container not found.</p>
+
+    <template v-else>
+      <div class="toolbar">
+        <span :class="['badge', container.state]">{{ container.state }}</span>
+        <span class="muted">{{ container.image }}</span>
+        <span class="muted">{{ container.status }}</span>
+        <span v-if="container.systemdUnit" class="muted">managed by {{ container.systemdUnit }}</span>
+      </div>
+
+      <div class="toolbar">
+        <button class="secondary" @click="action(containersApi.start)">Start</button>
+        <button class="secondary" @click="action(containersApi.stop)">Stop</button>
+        <button class="secondary" @click="action(containersApi.restart)">Restart</button>
+        <button class="danger" @click="remove">Remove</button>
+      </div>
+
+      <p class="muted">CPU: {{ stats?.CPU ?? '—' }} &nbsp; Mem: {{ stats?.MemUsage ?? '—' }}</p>
+
+      <div class="toolbar">
+        <NavButtons :options="tabOptions" :model-value="tab" @update:model-value="selectTab" />
+      </div>
+
+      <CodeEditor v-if="tab === 'logs'" :model-value="logs" readonly autoscroll />
+      <template v-else>
+        <div v-if="execError" class="error-banner">{{ execError }}</div>
+        <ShellTerminal v-if="execSessionId" :key="execSessionId" :ws-url="containerExecApi.wsUrl(execSessionId)" />
+      </template>
+    </template>
   </div>
-
-  <div v-if="error" class="error-banner">{{ error }}</div>
-  <p v-else-if="loading" aria-busy="true">Loading…</p>
-  <p v-else-if="!container" class="muted">Container not found.</p>
-
-  <template v-else>
-    <div class="toolbar">
-      <span :class="['badge', container.state]">{{ container.state }}</span>
-      <span class="muted">{{ container.image }}</span>
-      <span class="muted">{{ container.status }}</span>
-      <span v-if="container.systemdUnit" class="muted">managed by {{ container.systemdUnit }}</span>
-    </div>
-
-    <div class="toolbar">
-      <button class="secondary" @click="action(containersApi.start)">Start</button>
-      <button class="secondary" @click="action(containersApi.stop)">Stop</button>
-      <button class="secondary" @click="action(containersApi.restart)">Restart</button>
-      <button class="danger" @click="remove">Remove</button>
-    </div>
-
-    <p class="muted">CPU: {{ stats?.CPU ?? '—' }} &nbsp; Mem: {{ stats?.MemUsage ?? '—' }}</p>
-    <CodeEditor :model-value="logs" readonly autoscroll />
-  </template>
 </template>
+
+<style scoped>
+.container-detail-view {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+}
+</style>
