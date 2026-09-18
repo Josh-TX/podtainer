@@ -54,6 +54,7 @@ export const systemdApi = {
   list: ({ all = false, quadlet = false, favorite = false } = {}) =>
     request(`/systemd?all=${all}&quadlet=${quadlet}&favorite=${favorite}`),
   create: (filename, content) => request('/systemd', { method: 'POST', body: JSON.stringify({ filename, content }) }),
+  fsSuggestions: (path, dirsOnly) => request(`/systemd/fs-suggestions?path=${enc(path)}&dirsOnly=${dirsOnly}`),
   logs: (name, lines = 200) => request(`/systemd/${enc(name)}/logs?lines=${lines}`),
   content: (name) => request(`/systemd/${enc(name)}/content`),
   writeContent: (name, content) =>

@@ -54,6 +54,7 @@ func NewMux(cfg *config.Config, a *auth.Auth, shellMgr *shellsvc.Manager, execMg
 	api.HandleFunc("GET /api/quadlets/{filename}/logs", quadletLogs())
 
 	api.HandleFunc("GET /api/systemd", listSystemd(cfg))
+	api.HandleFunc("GET /api/systemd/fs-suggestions", fsSuggestions())
 	api.HandleFunc("POST /api/systemd", createSystemd(cfg))
 	api.HandleFunc("GET /api/systemd/{name}/logs", systemdLogs())
 	api.HandleFunc("GET /api/systemd/{name}/content", systemdContent())
@@ -336,6 +337,14 @@ func listSystemd(cfg *config.Config) http.HandlerFunc {
 			return
 		}
 		writeJSON(w, units)
+	}
+}
+
+func fsSuggestions() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		path := r.URL.Query().Get("path")
+		dirsOnly := r.URL.Query().Get("dirsOnly") == "true"
+		writeJSON(w, sysdunits.ListFsSuggestions(path, dirsOnly))
 	}
 }
 

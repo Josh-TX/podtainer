@@ -53,6 +53,54 @@ type Unit struct {
 	IsEditable bool `json:"isEditable"`
 }
 
+const maxFsSuggestions = 30
+
+// ListFsSuggestions lists directory entries under the directory portion of
+// path whose name has the (still-being-typed) basename as a prefix, for use
+// as ExecStart/WorkingDirectory typeahead suggestions. Directories are
+// returned with a trailing slash so a further keystroke can drill into them.
+// If dirsOnly is set, files are excluded (used for WorkingDirectory).
+func ListFsSuggestions(path string, dirsOnly bool) []string {
+	dir, prefix := path, ""
+	if !strings.HasSuffix(path, "/") {
+		dir, prefix = filepath.Dir(path), filepath.Base(path)
+	}
+
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return []string{}
+	}
+
+	dirs := []string{}
+	files := []string{}
+	for _, e := range entries {
+		if !strings.HasPrefix(e.Name(), prefix) {
+			continue
+		}
+		full := filepath.Join(dir, e.Name())
+		if e.IsDir() {
+			dirs = append(dirs, full+"/")
+			continue
+		}
+		if dirsOnly {
+			continue
+		}
+		info, err := e.Info()
+		if err != nil || info.Mode()&0111 == 0 {
+			continue
+		}
+		files = append(files, full)
+	}
+	sort.Strings(dirs)
+	sort.Strings(files)
+
+	result := append(dirs, files...)
+	if len(result) > maxFsSuggestions {
+		result = result[:maxFsSuggestions]
+	}
+	return result
+}
+
 // ListOptions selects which categories of unit are returned by List. All, if
 // set, overrides Quadlet/Favorite and returns every systemd --user unit.
 type ListOptions struct {

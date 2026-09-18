@@ -73,6 +73,16 @@ async function action(fn) {
   }
 }
 
+async function toggleFavorite() {
+  const favorite = !unit.value.isFavorite
+  try {
+    await systemdApi.setFavorite(props.name, favorite)
+    unit.value.isFavorite = favorite
+  } catch (e) {
+    error.value = e.message
+  }
+}
+
 async function remove() {
   if (!confirm(`Delete unit "${props.name}"? This stops the service and removes the unit file.`)) return
   error.value = ''
@@ -148,7 +158,18 @@ onMounted(load)
       </div>
 
       <div class="col">
-        <article>
+        <article style="position: relative">
+          <button
+            class="star-toggle"
+            :class="{ active: unit.isFavorite }"
+            :aria-label="unit.isFavorite ? 'Unfavorite' : 'Favorite'"
+            :title="unit.isFavorite ? 'Unfavorite' : 'Favorite'"
+            @click="toggleFavorite"
+          >
+            <svg viewBox="0 0 24 24" width="30" height="30" :fill="unit.isFavorite ? 'currentColor' : 'none'" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M11.525 2.295a.53.53 0 0 1 .95 0l2.31 4.679a2.123 2.123 0 0 0 1.595 1.16l5.166.756a.53.53 0 0 1 .294.904l-3.736 3.638a2.123 2.123 0 0 0-.611 1.878l.882 5.14a.53.53 0 0 1-.771.56l-4.618-2.428a2.122 2.122 0 0 0-1.973 0L6.396 21.01a.53.53 0 0 1-.77-.56l.881-5.139a2.122 2.122 0 0 0-.611-1.879L2.16 9.795a.53.53 0 0 1 .294-.906l5.165-.755a2.122 2.122 0 0 0 1.597-1.16z" />
+            </svg>
+          </button>
           <p v-if="meta?.stack" style="margin-bottom: 0.25rem">
             Stack: <RouterLink :to="`/stacks/${encodeURIComponent(meta.stack)}`">{{ meta.stack }}</RouterLink>
           </p>
@@ -180,5 +201,19 @@ onMounted(load)
 .dropdown a.disabled {
   color: var(--pico-muted-color);
   pointer-events: none;
+}
+.star-toggle {
+  position: absolute;
+  top: 0.5rem;
+  right: 0.5rem;
+  display: inline-flex;
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 0;
+  color: var(--pico-muted-color);
+}
+.star-toggle.active {
+  color: light-dark(#9a6700, #e3b341);
 }
 </style>
