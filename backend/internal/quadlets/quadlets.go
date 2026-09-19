@@ -216,6 +216,29 @@ func Validate(ctx context.Context, quadletDir, filename, content string) error {
 	return fmt.Errorf("quadlet validation failed: %s", strings.TrimSpace(stderr.String()))
 }
 
+// Create writes a brand-new quadlet file to dir, refusing to clobber an
+// existing one, validating it via the quadlet generator, then reloading
+// systemd and starting the resulting unit.
+func Create(ctx context.Context, dir, filename, content string) error {
+	path := filepath.Join(dir, filename)
+	if _, err := os.Stat(path); err == nil {
+		return fmt.Errorf("a quadlet file named %q already exists", filename)
+	} else if !os.IsNotExist(err) {
+		return err
+	}
+	if err := Validate(ctx, dir, filename, content); err != nil {
+		return err
+	}
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		return err
+	}
+	if _, err := execx.Run(ctx, "systemctl", "--user", "daemon-reload"); err != nil {
+		return err
+	}
+	_, err := execx.Run(ctx, "systemctl", "--user", "start", UnitName(filename))
+	return err
+}
+
 // Write overwrites a quadlet file's raw content and reloads systemd so the
 // change takes effect. It does not restart the unit.
 func Write(ctx context.Context, quadletDir, filename, content string) error {

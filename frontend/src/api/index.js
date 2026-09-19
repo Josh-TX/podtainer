@@ -39,6 +39,7 @@ export const stacksApi = {
 
 export const quadletsApi = {
   list: () => request('/quadlets'),
+  create: (filename, content) => request('/quadlets', { method: 'POST', body: JSON.stringify({ filename, content }) }),
   get: (filename) => request(`/quadlets/${enc(filename)}`),
   write: (filename, content) =>
     request(`/quadlets/${enc(filename)}`, { method: 'PUT', body: JSON.stringify({ content }) }),

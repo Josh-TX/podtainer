@@ -44,6 +44,7 @@ func NewMux(cfg *config.Config, a *auth.Auth, shellMgr *shellsvc.Manager, execMg
 	api.HandleFunc("GET /api/stacks/{name}/services/{service}/logs", stackServiceLogs(cfg))
 
 	api.HandleFunc("GET /api/quadlets", listQuadlets(cfg))
+	api.HandleFunc("POST /api/quadlets", createQuadlet(cfg))
 	api.HandleFunc("GET /api/quadlets/generator-logs", quadletGeneratorLogs())
 	api.HandleFunc("GET /api/quadlets/{filename}", getQuadlet(cfg))
 	api.HandleFunc("PUT /api/quadlets/{filename}", writeQuadlet(cfg))
@@ -229,6 +230,24 @@ func getQuadlet(cfg *config.Config) http.HandlerFunc {
 			return
 		}
 		writeJSON(w, map[string]string{"content": content, "path": filepath.Join(cfg.QuadletDir, filename)})
+	}
+}
+
+func createQuadlet(cfg *config.Config) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		var body struct {
+			Filename string `json:"filename"`
+			Content  string `json:"content"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			writeErr(w, 400, err)
+			return
+		}
+		if err := quadlets.Create(r.Context(), cfg.QuadletDir, body.Filename, body.Content); err != nil {
+			writeErr(w, 500, err)
+			return
+		}
+		writeJSON(w, map[string]string{"status": "created"})
 	}
 }
 

@@ -2,6 +2,7 @@ import { createRouter, createWebHistory } from 'vue-router'
 import StacksView from './views/StacksView.vue'
 import StackDetailView from './views/StackDetailView.vue'
 import QuadletsView from './views/QuadletsView.vue'
+import QuadletNewView from './views/QuadletNewView.vue'
 import QuadletDetailView from './views/QuadletDetailView.vue'
 import SystemdView from './views/SystemdView.vue'
 import SystemdNewView from './views/SystemdNewView.vue'
@@ -21,6 +22,7 @@ export default createRouter({
     { path: '/stacks/new', component: StackDetailView, props: { isNew: true } },
     { path: '/stacks/:name', component: StackDetailView, props: true },
     { path: '/quadlets', component: QuadletsView },
+    { path: '/quadlets/new', component: QuadletNewView },
     { path: '/quadlets/:filename', component: QuadletDetailView, props: true },
     { path: '/systemd', component: SystemdView },
     { path: '/systemd/new', component: SystemdNewView },

@@ -97,6 +97,7 @@ async function save() {
 </script>
 
 <template>
+  <div class="page-container">
   <div class="page-header">
     <h1 style="margin-bottom: 0.5rem">New Systemd Unit</h1>
     <div class="toolbar" style="margin-bottom: 0">
@@ -106,7 +107,7 @@ async function save() {
 
   <div v-if="error" class="error-banner">{{ error }}</div>
 
-  <div style="margin-bottom: 1.5rem">
+  <div style="margin-bottom: 0.5rem">
     <label>Unit name</label>
     <div role="group" style="margin-bottom: 0.25rem">
       <input v-model="name" placeholder="e.g. my-unit" />
@@ -161,9 +162,14 @@ async function save() {
   </div>
 
   <CodeEditor v-else v-model="rawContent" language="unit" max-height="26rem" />
+  </div>
 </template>
 
 <style scoped>
+.page-container {
+  max-width: 1200px;
+  margin: 0 auto;
+}
 .stack-columns label {
   margin-bottom: 0;
 }

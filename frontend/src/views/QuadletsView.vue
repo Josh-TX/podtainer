@@ -42,7 +42,10 @@ onMounted(load)
 <template>
   <div class="page-header">
     <h1>Quadlets</h1>
-    <button class="secondary" @click="openLogs">View Generator Logs</button>
+    <div class="toolbar" style="margin-bottom: 0">
+      <button class="secondary" @click="openLogs">View Generator Logs</button>
+      <RouterLink to="/quadlets/new" role="button">New Unit</RouterLink>
+    </div>
   </div>
   <p class="muted">Every quadlet unit file in the search path, including ones not managed by Podtainer.</p>
 
