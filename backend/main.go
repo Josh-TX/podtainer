@@ -39,7 +39,7 @@ func main() {
 	if err != nil {
 		log.Fatalf("webui: %v", err)
 	}
-	mux.Handle("/", http.FileServer(http.FS(frontend)))
+	mux.Handle("/", webui.Handler(frontend))
 
 	addr := fmt.Sprintf("0.0.0.0:%d", cfg.Port)
 	log.Printf("podtainer listening on %s (stacks: %s, quadlets: %s)", addr, cfg.StacksDir, cfg.QuadletDir)
