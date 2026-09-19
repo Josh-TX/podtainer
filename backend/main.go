@@ -13,9 +13,17 @@ import (
 	"podtainer/internal/webui"
 )
 
+var version = "dev"
+
 func main() {
 	port := flag.Int("p", 8080, "port to listen on")
+	showVersion := flag.Bool("v", false, "print version and exit")
 	flag.Parse()
+
+	if *showVersion {
+		fmt.Println(version)
+		return
+	}
 
 	cfg, err := config.Load(*port)
 	if err != nil {
