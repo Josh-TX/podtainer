@@ -269,8 +269,22 @@ func Create(ctx context.Context, dir, filename, content string) error {
 	if _, err := execx.Run(ctx, "systemctl", "--user", "daemon-reload"); err != nil {
 		return err
 	}
-	_, err := execx.Run(ctx, "systemctl", "--user", "start", filename)
+	// Units with an [Install] section are enabled too, so they start on boot.
+	args := []string{"--user", "start", filename}
+	if hasInstallSection(content) {
+		args = []string{"--user", "enable", "--now", filename}
+	}
+	_, err := execx.Run(ctx, "systemctl", args...)
 	return err
+}
+
+func hasInstallSection(content string) bool {
+	for _, line := range strings.Split(content, "\n") {
+		if strings.TrimSpace(line) == "[Install]" {
+			return true
+		}
+	}
+	return false
 }
 
 // WriteContent overwrites a static unit file's raw content and reloads
