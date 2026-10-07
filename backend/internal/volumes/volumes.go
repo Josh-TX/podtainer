@@ -32,6 +32,7 @@ type Volume struct {
 	Driver     string `json:"driver"`
 	Mountpoint string `json:"mountpoint"`
 	CreatedAt  string `json:"createdAt"`
+	Size       int64  `json:"size"`
 }
 
 type rawVolume struct {
@@ -63,7 +64,40 @@ func List(ctx context.Context) ([]Volume, error) {
 	for _, r := range raws {
 		result = append(result, Volume{Name: r.Name, Driver: r.Driver, Mountpoint: r.Mountpoint, CreatedAt: r.CreatedAt})
 	}
+	if err := fillSizes(ctx, result); err != nil {
+		return nil, err
+	}
 	return result, nil
+}
+
+// fillSizes sets Size on each volume using one du call over all mountpoints.
+// du exits non-zero on any unreadable file, so partial output is still used.
+func fillSizes(ctx context.Context, vols []Volume) error {
+	if len(vols) == 0 {
+		return nil
+	}
+	args := []string{"du", "-sb", "--"}
+	for _, v := range vols {
+		args = append(args, v.Mountpoint)
+	}
+	out, err := unshareRunLong(ctx, args...)
+	if err != nil && strings.TrimSpace(out) == "" {
+		return err
+	}
+	sizes := map[string]int64{}
+	for _, line := range strings.Split(out, "\n") {
+		size, path, ok := strings.Cut(line, "\t")
+		if !ok {
+			continue
+		}
+		if n, perr := strconv.ParseInt(size, 10, 64); perr == nil {
+			sizes[path] = n
+		}
+	}
+	for i := range vols {
+		vols[i].Size = sizes[vols[i].Mountpoint]
+	}
+	return nil
 }
 
 func Inspect(ctx context.Context, name string) (*Volume, error) {
@@ -79,7 +113,11 @@ func Inspect(ctx context.Context, name string) (*Volume, error) {
 		return nil, fmt.Errorf("volume %q not found", name)
 	}
 	r := raws[0]
-	return &Volume{Name: r.Name, Driver: r.Driver, Mountpoint: r.Mountpoint, CreatedAt: r.CreatedAt}, nil
+	one := []Volume{{Name: r.Name, Driver: r.Driver, Mountpoint: r.Mountpoint, CreatedAt: r.CreatedAt}}
+	if err := fillSizes(ctx, one); err != nil {
+		return nil, err
+	}
+	return &one[0], nil
 }
 
 // resolvePath joins a volume's mountpoint with a user-supplied relative path
@@ -127,6 +165,7 @@ func ListDir(ctx context.Context, mountpoint, relPath string) ([]Entry, error) {
 		size, _ := strconv.ParseInt(parts[2], 10, 64)
 		entries = append(entries, Entry{Name: parts[0], IsDir: parts[1] == "d", Size: size})
 	}
+	fillDirSizes(ctx, dir, entries)
 	sort.Slice(entries, func(i, j int) bool {
 		if entries[i].IsDir != entries[j].IsDir {
 			return entries[i].IsDir
@@ -134,6 +173,37 @@ func ListDir(ctx context.Context, mountpoint, relPath string) ([]Entry, error) {
 		return entries[i].Name < entries[j].Name
 	})
 	return entries, nil
+}
+
+// fillDirSizes replaces the size find reports for directories (the inode
+// size, meaningless) with their recursive usage, via one du call. Best
+// effort: on failure sizes stay as-is.
+func fillDirSizes(ctx context.Context, dir string, entries []Entry) {
+	args := []string{"du", "-sb", "--"}
+	for _, e := range entries {
+		if e.IsDir {
+			args = append(args, filepath.Join(dir, e.Name))
+		}
+	}
+	if len(args) == 3 {
+		return
+	}
+	out, _ := unshareRunLong(ctx, args...)
+	sizes := map[string]int64{}
+	for _, line := range strings.Split(out, "\n") {
+		size, path, ok := strings.Cut(line, "\t")
+		if !ok {
+			continue
+		}
+		if n, err := strconv.ParseInt(size, 10, 64); err == nil {
+			sizes[path] = n
+		}
+	}
+	for i := range entries {
+		if entries[i].IsDir {
+			entries[i].Size = sizes[filepath.Join(dir, entries[i].Name)]
+		}
+	}
 }
 
 func fileSize(ctx context.Context, full string) (int64, error) {

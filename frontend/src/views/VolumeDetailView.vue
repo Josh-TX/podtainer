@@ -243,6 +243,7 @@ onMounted(async () => {
     <article>
       <p style="margin-bottom: 0.25rem">Driver: {{ volume.driver }}</p>
       <p style="margin-bottom: 0.25rem">Mountpoint: <span class="muted">{{ volume.mountpoint }}</span></p>
+      <p style="margin-bottom: 0.25rem">Size: <span class="muted">{{ humanSize(volume.size) }}</span></p>
       <p style="margin-bottom: 0.25rem">Created: <span class="muted">{{ volume.createdAt }}</span></p>
       <p style="margin-bottom: 0">
         Used by:
@@ -291,7 +292,7 @@ onMounted(async () => {
             <td>
               <a href="#" class="row-link" @click.prevent="openEntry(entry)">{{ entry.isDir ? '📁 ' : '📄 ' }}{{ entry.name }}</a>
             </td>
-            <td class="muted">{{ entry.isDir ? '—' : humanSize(entry.size) }}</td>
+            <td class="muted">{{ humanSize(entry.size) }}</td>
             <td style="position: relative; z-index: 1; white-space: nowrap">
               <a href="#" @click.prevent="moveEntry(entry, false)">Move</a>
               &nbsp;
@@ -330,3 +331,12 @@ onMounted(async () => {
     </dialog>
   </template>
 </template>
+
+<style scoped>
+nav[aria-label='breadcrumb'] {
+  --pico-nav-element-spacing-vertical: 0.15rem;
+}
+nav[aria-label='breadcrumb'] ul {
+  margin-bottom: 0;
+}
+</style>

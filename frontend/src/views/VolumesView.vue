@@ -1,7 +1,7 @@
 <script setup>
 import { ref, onMounted } from 'vue'
 import { volumesApi } from '../api'
-import { timeAgo, fullDate } from '../utils/format'
+import { timeAgo, fullDate, humanSize } from '../utils/format'
 
 const volumes = ref([])
 const error = ref('')
@@ -35,6 +35,7 @@ onMounted(load)
         <tr>
           <th>Name</th>
           <th>Driver</th>
+          <th>Size</th>
           <th>Created</th>
           <th>Mountpoint</th>
         </tr>
@@ -43,6 +44,7 @@ onMounted(load)
         <tr v-for="v in volumes" :key="v.name">
           <td><RouterLink class="row-link truncate-rtl" :to="`/volumes/${encodeURIComponent(v.name)}`">{{ v.name }}</RouterLink></td>
           <td class="muted">{{ v.driver }}</td>
+          <td class="muted no-wrap">{{ humanSize(v.size) }}</td>
           <td class="muted no-wrap" :title="fullDate(v.createdAt)">{{ timeAgo(v.createdAt) }}</td>
           <td class="muted"><span class="truncate-rtl">{{ v.mountpoint }}</span></td>
         </tr>
@@ -60,7 +62,8 @@ table.rows {
 table.rows th:nth-child(2) {
   width: 5.5rem;
 }
-table.rows th:nth-child(3) {
+table.rows th:nth-child(3),
+table.rows th:nth-child(4) {
   width: 7.5rem;
 }
 .no-wrap {
