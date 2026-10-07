@@ -114,6 +114,20 @@ h1 .badge {
 [data-tooltip].drift-icon {
   border-bottom: none;
 }
+.drift-icon[data-tooltip]::before {
+  left: -0.5rem;
+  width: max-content;
+  max-width: min(22rem, 80vw);
+  white-space: normal;
+  animation: none !important;
+  transform: translateY(0.25rem) !important;
+}
+.drift-icon[data-tooltip]::after {
+  display: none;
+}
+.drift-icon[data-tooltip]:hover::before, .drift-icon[data-tooltip]:focus::before {
+  opacity: 1;
+}
 
 .error-banner, .warn-banner {
   padding: 0.75rem 1rem;
