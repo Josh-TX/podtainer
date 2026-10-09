@@ -10,6 +10,7 @@ type Config struct {
 	StacksDir      string
 	QuadletDir     string
 	SystemdUnitDir string
+	EnvironmentDir string
 	AuthFile       string
 	FavoritesFile  string
 }
@@ -39,6 +40,7 @@ func Load(port int) (*Config, error) {
 		StacksDir:      stacksDir,
 		QuadletDir:     quadletDir,
 		SystemdUnitDir: systemdUnitDir,
+		EnvironmentDir: filepath.Join(xdgConfig, "environment.d"),
 		AuthFile:       filepath.Join(xdgConfig, "podtainer", "htpasswd"),
 		FavoritesFile:  filepath.Join(xdgConfig, "podtainer", "systemd-favorites.txt"),
 	}, nil

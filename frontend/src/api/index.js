@@ -54,6 +54,8 @@ export const quadletsApi = {
 export const systemdApi = {
   list: ({ all = false, quadlet = false, favorite = false } = {}) =>
     request(`/systemd?all=${all}&quadlet=${quadlet}&favorite=${favorite}`),
+  getEnv: () => request('/systemd/env'),
+  setEnv: (content) => request('/systemd/env', { method: 'PUT', body: JSON.stringify({ content }) }),
   create: (filename, content) => request('/systemd', { method: 'POST', body: JSON.stringify({ filename, content }) }),
   fsSuggestions: (path, dirsOnly) => request(`/systemd/fs-suggestions?path=${enc(path)}&dirsOnly=${dirsOnly}`),
   logs: (name, lines = 200) => request(`/systemd/${enc(name)}/logs?lines=${lines}`),

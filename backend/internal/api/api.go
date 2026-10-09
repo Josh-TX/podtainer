@@ -15,6 +15,7 @@ import (
 
 	"podtainer/internal/auth"
 	"podtainer/internal/config"
+	"podtainer/internal/envfile"
 	"podtainer/internal/favorites"
 	"podtainer/internal/images"
 	"podtainer/internal/podmanx"
@@ -55,6 +56,8 @@ func NewMux(cfg *config.Config, a *auth.Auth, shellMgr *shellsvc.Manager, execMg
 	api.HandleFunc("GET /api/quadlets/{filename}/logs", quadletLogs())
 
 	api.HandleFunc("GET /api/systemd", listSystemd(cfg))
+	api.HandleFunc("GET /api/systemd/env", getEnvFile(cfg))
+	api.HandleFunc("PUT /api/systemd/env", setEnvFile(cfg))
 	api.HandleFunc("GET /api/systemd/fs-suggestions", fsSuggestions())
 	api.HandleFunc("POST /api/systemd", createSystemd(cfg))
 	api.HandleFunc("GET /api/systemd/{name}/logs", systemdLogs())
@@ -356,6 +359,38 @@ func listSystemd(cfg *config.Config) http.HandlerFunc {
 			return
 		}
 		writeJSON(w, units)
+	}
+}
+
+func getEnvFile(cfg *config.Config) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		info, err := envfile.Get(r.Context(), cfg.EnvironmentDir)
+		if err != nil {
+			writeErr(w, 500, err)
+			return
+		}
+		writeJSON(w, info)
+	}
+}
+
+func setEnvFile(cfg *config.Config) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		var body struct {
+			Content string `json:"content"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			writeErr(w, 400, err)
+			return
+		}
+		if err := envfile.Set(cfg.EnvironmentDir, body.Content); err != nil {
+			writeErr(w, 400, err)
+			return
+		}
+		if err := envfile.Reload(r.Context()); err != nil {
+			writeErr(w, 500, err)
+			return
+		}
+		writeJSON(w, map[string]string{"status": "saved"})
 	}
 }
 
