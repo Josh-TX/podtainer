@@ -304,6 +304,17 @@ func WriteContent(ctx context.Context, unit, content string) error {
 	if strings.HasPrefix(path, "/run") {
 		return fmt.Errorf("unit %q is generated at runtime and can't be edited directly", unit)
 	}
+	// `systemctl cat` prepends a "# <path>" header; drop it so it isn't saved
+	// into the file (and re-added on every edit).
+	header := "# " + path
+	content = strings.TrimLeft(content, "\r\n")
+	for {
+		first, rest, _ := strings.Cut(content, "\n")
+		if strings.TrimSpace(first) != header {
+			break
+		}
+		content = strings.TrimLeft(rest, "\r\n")
+	}
 	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
 		return err
 	}
