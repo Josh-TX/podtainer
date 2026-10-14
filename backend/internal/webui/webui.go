@@ -1,16 +1,19 @@
-// Package webui embeds the built Vue frontend (frontend/dist, copied here by
-// the frontend build) into the Podtainer binary so it ships as one file.
+// Package webui embeds the built Vue frontend (the frontend build writes dist/
+// here) into the Podtainer binary so it ships as one file. It is only embedded
+// when built with -tags embed_frontend.
 package webui
 
 import (
-	"embed"
 	"io/fs"
 	"net/http"
 	"strings"
 )
 
-//go:embed all:dist
-var distFS embed.FS
+// Embedded reports whether a frontend build is embedded.
+func Embedded() bool {
+	_, err := fs.Stat(distFS, "dist/index.html")
+	return err == nil
+}
 
 // FS returns the embedded frontend build rooted at dist/, ready to serve.
 func FS() (fs.FS, error) {

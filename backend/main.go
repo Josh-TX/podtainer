@@ -1,10 +1,10 @@
 package main
 
 import (
-	"flag"
 	"fmt"
 	"log"
 	"net/http"
+	"os"
 
 	"podtainer/internal/api"
 	"podtainer/internal/auth"
@@ -13,19 +13,10 @@ import (
 	"podtainer/internal/webui"
 )
 
-var version = "dev"
+var version = "dev" // set via -ldflags "-X main.version=..."
 
 func main() {
-	port := flag.Int("p", 8080, "port to listen on")
-	showVersion := flag.Bool("v", false, "print version and exit")
-	flag.Parse()
-
-	if *showVersion {
-		fmt.Println(version)
-		return
-	}
-
-	cfg, err := config.Load(*port)
+	cfg, err := config.Load(os.Args[1:], version)
 	if err != nil {
 		log.Fatalf("config: %v", err)
 	}
@@ -35,11 +26,15 @@ func main() {
 	execMgr := shellsvc.NewManager()
 	mux := api.NewMux(cfg, a, shellMgr, execMgr)
 
-	frontend, err := webui.FS()
-	if err != nil {
-		log.Fatalf("webui: %v", err)
+	if webui.Embedded() {
+		frontend, err := webui.FS()
+		if err != nil {
+			log.Fatalf("webui: %v", err)
+		}
+		mux.Handle("/", webui.Handler(frontend))
+	} else {
+		log.Printf("no frontend embedded, use the Vite dev server (or build with -tags embed_frontend)")
 	}
-	mux.Handle("/", webui.Handler(frontend))
 
 	addr := fmt.Sprintf("0.0.0.0:%d", cfg.Port)
 	log.Printf("podtainer listening on %s (stacks: %s, quadlets: %s)", addr, cfg.StacksDir, cfg.QuadletDir)
