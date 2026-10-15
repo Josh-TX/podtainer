@@ -107,6 +107,28 @@ export const volumesApi = {
   },
 }
 
+export const filesApi = {
+  list: async (path) => request(`/files?path=${enc(path || '')}`),
+  read: (path) => request(`/files?path=${enc(path)}`),
+  dirSize: async (path) => (await request(`/files/size?path=${enc(path)}`)).size,
+  writeFile: (path, content) =>
+    request(`/files?path=${enc(path)}`, { method: 'PUT', body: JSON.stringify({ content }) }),
+  createFile: (path) => request(`/files?path=${enc(path)}`, { method: 'POST', body: JSON.stringify({ type: 'file' }) }),
+  mkdir: (path) => request(`/files?path=${enc(path)}`, { method: 'POST', body: JSON.stringify({ type: 'dir' }) }),
+  deleteEntry: (path) => request(`/files?path=${enc(path)}`, { method: 'DELETE' }),
+  move: (path, dest, isCopy) =>
+    request(`/files?path=${enc(path)}`, { method: 'PATCH', body: JSON.stringify({ dest, isCopy }) }),
+  chmod: (path, perm, recursive) =>
+    request(`/files/chmod?path=${enc(path)}`, { method: 'POST', body: JSON.stringify({ perm, recursive }) }),
+  downloadUrl: (path) => `/api/files?path=${enc(path)}&download=1`,
+  async upload(path, file, overwrite) {
+    const res = await fetch(`/api/files?path=${enc(path)}&upload=1${overwrite ? '&overwrite=1' : ''}`, { method: 'POST', body: file })
+    const body = await res.json().catch(() => ({}))
+    if (!res.ok) throw new Error(body.error || res.statusText)
+    return body
+  },
+}
+
 export const imagesApi = {
   list: () => request('/images'),
   delete: (id) => request(`/images/${enc(id)}`, { method: 'DELETE' }),

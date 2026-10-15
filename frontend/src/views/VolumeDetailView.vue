@@ -6,8 +6,6 @@ import { humanSize } from '../utils/format'
 
 const props = defineProps({ name: { type: String, required: true } })
 
-const MAX_EDIT_SIZE = 1024 * 1024
-
 const volume = ref(null)
 const containers = ref([])
 const error = ref('')
@@ -86,14 +84,14 @@ async function openFile(entry) {
   fileError.value = ''
   selectedName.value = entry.name
   fileDialog.value.showModal()
-  if (entry.size > MAX_EDIT_SIZE) {
-    fileTooLarge.value = true
-    fileContent.value = ''
-    return
-  }
   fileTooLarge.value = false
   try {
     const data = await volumesApi.readFile(props.name, joinPath(currentPath.value, entry.name))
+    if (!data.editable) {
+      fileTooLarge.value = true
+      fileContent.value = ''
+      return
+    }
     fileContent.value = data.content
     originalContent.value = data.content
   } catch (e) {
@@ -325,7 +323,10 @@ onMounted(async () => {
           </div>
         </div>
         <div v-if="fileError" class="error-banner">{{ fileError }}</div>
-        <p v-if="fileTooLarge" class="muted">File is larger than 1MB — too big to edit here.</p>
+        <div v-if="fileTooLarge">
+          <p class="muted">Can't edit this file here (binary or larger than 1MB).</p>
+          <button @click="triggerDownload(joinPath(currentPath, selectedName))">Download</button>
+        </div>
         <CodeEditor v-else v-model="fileContent" max-height="60vh" />
       </article>
     </dialog>

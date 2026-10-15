@@ -6,7 +6,7 @@ import { authState } from './api/authState.js'
 import LoginView from './views/LoginView.vue'
 
 const route = useRoute()
-const sections = ['stacks', 'quadlets', 'systemd', 'containers', 'images', 'volumes', 'shell']
+const sections = ['stacks', 'quadlets', 'systemd', 'containers', 'images', 'volumes', 'shell', 'files']
 const activeSection = computed(() => sections.find(s => route.path.startsWith(`/${s}`)))
 
 async function refreshAuth() {
@@ -41,6 +41,7 @@ onMounted(refreshAuth)
           <li :class="{ active: activeSection === 'images' }"><RouterLink to="/images">Images</RouterLink></li>
           <li :class="{ active: activeSection === 'volumes' }"><RouterLink to="/volumes">Volumes</RouterLink></li>
           <li :class="{ active: activeSection === 'shell' }"><RouterLink to="/shell">Shell</RouterLink></li>
+          <li :class="{ active: activeSection === 'files' }"><RouterLink to="/files">Files</RouterLink></li>
         </ul>
         <ul style="margin-left: auto; margin-right: 0;">
           <li style="padding: 0;">

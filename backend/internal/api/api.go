@@ -16,6 +16,7 @@ import (
 	"podtainer/internal/auth"
 	"podtainer/internal/config"
 	"podtainer/internal/envfile"
+	"podtainer/internal/files"
 	"podtainer/internal/favorites"
 	"podtainer/internal/images"
 	"podtainer/internal/podmanx"
@@ -93,6 +94,14 @@ func NewMux(cfg *config.Config, a *auth.Auth, shellMgr *shellsvc.Manager, execMg
 	api.HandleFunc("PUT /api/volumes/{name}/fs/{path...}", writeVolumeFsEntry())
 	api.HandleFunc("PATCH /api/volumes/{name}/fs/{path...}", moveVolumeFsEntry())
 	api.HandleFunc("DELETE /api/volumes/{name}/fs/{path...}", deleteVolumeFsEntry())
+
+	api.HandleFunc("GET /api/files", getFiles())
+	api.HandleFunc("GET /api/files/size", getFilesDirSize())
+	api.HandleFunc("POST /api/files", createFilesEntry())
+	api.HandleFunc("PUT /api/files", writeFilesEntry())
+	api.HandleFunc("PATCH /api/files", moveFilesEntry())
+	api.HandleFunc("POST /api/files/chmod", chmodFilesEntry())
+	api.HandleFunc("DELETE /api/files", deleteFilesEntry())
 
 	api.HandleFunc("GET /api/shell/sessions", listShellSessions(shellMgr))
 	api.HandleFunc("POST /api/shell/sessions", createShellSession(shellMgr))
@@ -771,12 +780,20 @@ func getVolumeFs() http.HandlerFunc {
 			return
 		}
 
+		if size > files.MaxEditSize {
+			writeJSON(w, map[string]any{"isDir": false, "size": size, "editable": false, "content": ""})
+			return
+		}
 		content, err := volumes.ReadFile(r.Context(), mp, path)
 		if err != nil {
 			writeErr(w, 400, err)
 			return
 		}
-		writeJSON(w, map[string]any{"isDir": false, "size": size, "content": content})
+		if !files.IsText([]byte(content)) {
+			writeJSON(w, map[string]any{"isDir": false, "size": size, "editable": false, "content": ""})
+			return
+		}
+		writeJSON(w, map[string]any{"isDir": false, "size": size, "editable": true, "content": content})
 	}
 }
 
