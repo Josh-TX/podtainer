@@ -30,6 +30,7 @@ onMounted(refreshAuth)
   <template v-if="!authState.checked"></template>
   <LoginView v-else-if="!authState.authenticated" />
   <div v-else class="app-shell">
+    <div v-if="menuOpen" class="nav-backdrop" @click="menuOpen = false"></div>
     <header class="container-fluid" style="padding-right: 0;">
       <nav>
         <ul>
@@ -76,6 +77,13 @@ onMounted(refreshAuth)
 }
 .app-shell > header {
   flex: none;
+  position: relative;
+  z-index: 20;
+}
+.nav-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 10;
 }
 .app-shell > main {
   flex: 1;
@@ -113,13 +121,23 @@ nav details.dropdown[open] > summary {
   .nav-current { display: block; }
   .nav-right { display: flex; align-items: center; }
   .nav-links {
-    display: none;
-    order: 3;
-    width: 100%;
+    display: flex;
+    visibility: hidden;
+    transform: translateY(-100%);
+    clip-path: inset(100% -24px -24px -24px);
+    transition: transform 150ms, clip-path 150ms, visibility 150ms;
+    position: absolute;
+    top: 100%;
+    left: 0;
+    right: 0;
     flex-direction: column;
     margin: 0;
+    padding: 0.25rem var(--pico-spacing);
+    background: var(--pico-code-background-color);
+    border-bottom: var(--pico-border-width) solid var(--pico-table-border-color);
+    box-shadow: 0 8px 16px rgba(0, 0, 0, 0.25);
   }
-  .nav-links.open { display: flex; }
+  .nav-links.open { visibility: visible; transform: none; clip-path: inset(0 -24px -24px -24px); }
   .nav-links li, .nav-links a { width: 100%; }
   .nav-links li.active::after {
     top: 0;
