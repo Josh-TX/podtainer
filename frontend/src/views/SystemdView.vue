@@ -244,8 +244,16 @@ onMounted(load)
   cursor: pointer;
   padding: 0;
   color: var(--pico-muted-color);
+  transition: color 0.15s, opacity 0.15s;
+}
+.star-toggle:hover {
+  color: light-dark(#9a6700, #e3b341);
+  opacity: 0.6;
 }
 .star-toggle.active {
   color: light-dark(#9a6700, #e3b341);
+}
+.star-toggle.active:hover {
+  opacity: 0.75;
 }
 </style>

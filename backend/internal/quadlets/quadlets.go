@@ -52,6 +52,23 @@ func UnitName(filename string) string {
 	return filename
 }
 
+// ResolveUnitName is UnitName, but honors a ServiceName= override in the
+// quadlet file at dir/filename (quadlet names the generated service after it).
+func ResolveUnitName(dir, filename string) string {
+	if data, err := os.ReadFile(filepath.Join(dir, filename)); err == nil {
+		override := ""
+		for _, line := range strings.Split(string(data), "\n") {
+			if v, ok := strings.CutPrefix(strings.TrimSpace(line), "ServiceName="); ok {
+				override = strings.TrimSpace(v)
+			}
+		}
+		if override != "" {
+			return override + ".service"
+		}
+	}
+	return UnitName(filename)
+}
+
 // UnitType recognizes actual quadlet unit types. A .target file here would
 // be misplaced debris, not a legitimate quadlet resident, so it's
 // deliberately not included and falls through to "other".

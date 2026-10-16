@@ -26,10 +26,13 @@ async function load() {
   error.value = ''
   loading.value = true
   try {
-    const units = await systemdApi.list({ all: true })
-    unit.value = units.find((u) => u.name === props.name) || null
+    unit.value = await systemdApi.get(props.name).catch((e) => {
+      if (/not found$/.test(e.message)) return null
+      throw e
+    })
     if (unit.value) {
-      const orphaned = isOrphaned(unit.value)
+      // Orphans and virtual units (e.g. -.mount, from mountinfo) have no file to cat.
+      const orphaned = isOrphaned(unit.value) || !unit.value.fragmentPath
       const [data, quadlets, containers] = await Promise.all([
         orphaned ? Promise.resolve(null) : systemdApi.content(props.name),
         quadletsApi.list(),
@@ -212,8 +215,16 @@ onMounted(load)
   cursor: pointer;
   padding: 0;
   color: var(--pico-muted-color);
+  transition: color 0.15s, opacity 0.15s;
+}
+.star-toggle:hover {
+  color: light-dark(#9a6700, #e3b341);
+  opacity: 0.6;
 }
 .star-toggle.active {
   color: light-dark(#9a6700, #e3b341);
+}
+.star-toggle.active:hover {
+  opacity: 0.75;
 }
 </style>

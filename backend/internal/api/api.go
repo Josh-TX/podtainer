@@ -57,6 +57,7 @@ func NewMux(cfg *config.Config, a *auth.Auth, shellMgr *shellsvc.Manager, execMg
 	api.HandleFunc("GET /api/quadlets/{filename}/logs", quadletLogs())
 
 	api.HandleFunc("GET /api/systemd", listSystemd(cfg))
+	api.HandleFunc("GET /api/systemd/{name}", getSystemd(cfg))
 	api.HandleFunc("GET /api/systemd/env", getEnvFile(cfg))
 	api.HandleFunc("PUT /api/systemd/env", setEnvFile(cfg))
 	api.HandleFunc("GET /api/systemd/fs-suggestions", fsSuggestions())
@@ -368,6 +369,26 @@ func listSystemd(cfg *config.Config) http.HandlerFunc {
 			return
 		}
 		writeJSON(w, units)
+	}
+}
+
+func getSystemd(cfg *config.Config) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		favs, err := favorites.Load(cfg.FavoritesFile)
+		if err != nil {
+			writeErr(w, 500, err)
+			return
+		}
+		units, err := sysdunits.List(r.Context(), cfg.QuadletDir, favs, sysdunits.ListOptions{Names: []string{r.PathValue("name")}})
+		if err != nil {
+			writeErr(w, 500, err)
+			return
+		}
+		if len(units) == 0 {
+			writeErr(w, 404, fmt.Errorf("unit %q not found", r.PathValue("name")))
+			return
+		}
+		writeJSON(w, units[0])
 	}
 }
 

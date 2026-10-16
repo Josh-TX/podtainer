@@ -107,6 +107,9 @@ type ListOptions struct {
 	All      bool
 	Quadlet  bool
 	Favorite bool
+	// Names, if set, restricts the result to exactly these units (no
+	// category filtering) and overrides All/Quadlet/Favorite.
+	Names []string
 }
 
 type rawUnitFile struct {
@@ -136,58 +139,85 @@ type rawUnit struct {
 // quadletDir - systemd clears SourcePath/FragmentPath for them once orphaned,
 // so that's the only way to attribute them back to a quadlet file.
 func List(ctx context.Context, quadletDir string, favorites map[string]bool, opts ListOptions) ([]Unit, error) {
-	fileOut, err := execx.Run(ctx, "systemctl", "--user", "list-unit-files", "--all", "--output=json", "--no-pager")
-	if err != nil {
-		return nil, err
-	}
-	var files []rawUnitFile
-	if err := json.Unmarshal([]byte(fileOut), &files); err != nil {
-		return nil, err
-	}
-
 	expected := map[string]string{} // unit name -> quadlet filename
 	if entries, err := os.ReadDir(quadletDir); err == nil {
 		for _, e := range entries {
 			if !e.IsDir() {
-				expected[quadlets.UnitName(e.Name())] = e.Name()
+				expected[quadlets.ResolveUnitName(quadletDir, e.Name())] = e.Name()
 			}
 		}
 	}
 
-	loadedOut, err := execx.Run(ctx, "systemctl", "--user", "list-units", "--all", "--output=json", "--no-pager")
-	if err != nil {
-		return nil, err
-	}
-	var loaded []rawUnit
-	if err := json.Unmarshal([]byte(loadedOut), &loaded); err != nil {
-		return nil, err
-	}
-
-	fileStates := map[string]string{}
 	candidates := map[string]bool{}
-	for _, f := range files {
-		candidates[f.UnitFile] = true
-		fileStates[f.UnitFile] = f.State
-	}
-	for _, u := range loaded {
-		// A full loaded-unit scan is only needed for the "all"/favorite
-		// categories; otherwise only quadlet orphans (loaded but with no
-		// backing file) are worth the extra `show` call.
-		if opts.All || opts.Favorite {
-			candidates[u.Unit] = true
-		} else if _, ok := expected[u.Unit]; ok {
+	if len(opts.Names) > 0 {
+		for _, name := range opts.Names {
+			candidates[name] = true
+		}
+	} else if opts.All {
+		fileOut, err := execx.Run(ctx, "systemctl", "--user", "list-unit-files", "--all", "--output=json", "--no-pager")
+		if err != nil {
+			return nil, err
+		}
+		var files []rawUnitFile
+		if err := json.Unmarshal([]byte(fileOut), &files); err != nil {
+			return nil, err
+		}
+		loadedOut, err := execx.Run(ctx, "systemctl", "--user", "list-units", "--all", "--output=json", "--no-pager")
+		if err != nil {
+			return nil, err
+		}
+		var loaded []rawUnit
+		if err := json.Unmarshal([]byte(loadedOut), &loaded); err != nil {
+			return nil, err
+		}
+		for _, f := range files {
+			candidates[f.UnitFile] = true
+		}
+		for _, u := range loaded {
 			candidates[u.Unit] = true
 		}
+	} else {
+		// Quadlet and favorite membership are both derivable by name, so
+		// skip the full unit scan and only inspect those units.
+		if opts.Quadlet {
+			for name := range expected {
+				candidates[name] = true
+			}
+		}
+		if opts.Favorite {
+			for name, fav := range favorites {
+				if fav {
+					candidates[name] = true
+				}
+			}
+		}
+	}
+
+	names := make([]string, 0, len(candidates))
+	for name := range candidates {
+		// Bare templates (foo@.service) can't be queried, and one invalid
+		// name fails the whole batch.
+		if strings.Contains(name, "@.") {
+			continue
+		}
+		names = append(names, name)
+	}
+	allProps, err := showBatch(ctx, names)
+	if err != nil {
+		return nil, err
 	}
 
 	units := []Unit{}
 	for name := range candidates {
-		props, err := execx.Run(ctx, "systemctl", "--user", "show", name,
-			"--property=LoadState,ActiveState,SubState,Description,SourcePath,FragmentPath,NRestarts,ConditionTimestamp")
-		if err != nil {
+		vals, ok := allProps[name]
+		if !ok {
 			continue
 		}
-		vals := parseProperties(props)
+		// Names we guessed (stale favorites, quadlets that never generated)
+		// come back from `show` as inactive not-found stubs; drop them.
+		if vals["LoadState"] == "not-found" && vals["ActiveState"] == "inactive" {
+			continue
+		}
 		sourcePath := vals["SourcePath"]
 		isQuadlet := sourcePath != "" && strings.HasPrefix(sourcePath, quadletDir)
 		if !isQuadlet {
@@ -197,7 +227,7 @@ func List(ctx context.Context, quadletDir string, favorites map[string]bool, opt
 			}
 		}
 		isFavorite := favorites[name]
-		if !opts.All && !(opts.Quadlet && isQuadlet) && !(opts.Favorite && isFavorite) {
+		if len(opts.Names) == 0 && !opts.All && !(opts.Quadlet && isQuadlet) && !(opts.Favorite && isFavorite) {
 			continue
 		}
 		nRestarts, _ := strconv.Atoi(vals["NRestarts"])
@@ -218,7 +248,7 @@ func List(ctx context.Context, quadletDir string, favorites map[string]bool, opt
 			IsQuadlet:      isQuadlet,
 			IsFavorite:     isFavorite,
 			SinceTimestamp: since,
-			UnitFileState:  fileStates[name],
+			UnitFileState:  vals["UnitFileState"],
 			IsEditable:     fragmentPath != "" && !strings.HasPrefix(fragmentPath, "/run"),
 		})
 	}
@@ -230,7 +260,7 @@ func List(ctx context.Context, quadletDir string, favorites map[string]bool, opt
 // `systemctl cat`), which for quadlet-origin units includes the generated
 // .service file systemd actually loads, not the source .container/.network file.
 func Content(ctx context.Context, unit string) (string, error) {
-	return execx.Run(ctx, "systemctl", "--user", "cat", unit)
+	return execx.Run(ctx, "systemctl", "--user", "cat", "--", unit)
 }
 
 // Validate checks a not-yet-written unit file for syntax/semantic errors via
@@ -270,9 +300,9 @@ func Create(ctx context.Context, dir, filename, content string) error {
 		return err
 	}
 	// Units with an [Install] section are enabled too, so they start on boot.
-	args := []string{"--user", "start", filename}
+	args := []string{"--user", "start", "--", filename}
 	if hasInstallSection(content) {
-		args = []string{"--user", "enable", "--now", filename}
+		args = []string{"--user", "enable", "--now", "--", filename}
 	}
 	_, err := execx.Run(ctx, "systemctl", args...)
 	return err
@@ -293,7 +323,7 @@ func hasInstallSection(content string) bool {
 // rejected rather than trusting the caller's IsEditable check, since editing
 // them would just be silently discarded on the next daemon-reload anyway.
 func WriteContent(ctx context.Context, unit, content string) error {
-	props, err := execx.Run(ctx, "systemctl", "--user", "show", unit, "--property=FragmentPath")
+	props, err := execx.Run(ctx, "systemctl", "--user", "show", "--property=FragmentPath", "--", unit)
 	if err != nil {
 		return err
 	}
@@ -327,7 +357,7 @@ func WriteContent(ctx context.Context, unit, content string) error {
 // e.g. quadlet-generated .service files) are rejected since there's no
 // static file to remove.
 func Delete(ctx context.Context, unit string) error {
-	props, err := execx.Run(ctx, "systemctl", "--user", "show", unit, "--property=FragmentPath")
+	props, err := execx.Run(ctx, "systemctl", "--user", "show", "--property=FragmentPath", "--", unit)
 	if err != nil {
 		return err
 	}
@@ -338,8 +368,8 @@ func Delete(ctx context.Context, unit string) error {
 	if strings.HasPrefix(path, "/run") {
 		return fmt.Errorf("unit %q is generated at runtime and can't be deleted directly", unit)
 	}
-	_, _ = execx.Run(ctx, "systemctl", "--user", "stop", unit)
-	_, _ = execx.Run(ctx, "systemctl", "--user", "disable", unit)
+	_, _ = execx.Run(ctx, "systemctl", "--user", "stop", "--", unit)
+	_, _ = execx.Run(ctx, "systemctl", "--user", "disable", "--", unit)
 	if err := os.Remove(path); err != nil {
 		return err
 	}
@@ -348,27 +378,27 @@ func Delete(ctx context.Context, unit string) error {
 }
 
 func Start(ctx context.Context, unit string) error {
-	_, err := execx.Run(ctx, "systemctl", "--user", "start", unit)
+	_, err := execx.Run(ctx, "systemctl", "--user", "start", "--", unit)
 	return err
 }
 
 func Stop(ctx context.Context, unit string) error {
-	_, err := execx.Run(ctx, "systemctl", "--user", "stop", unit)
+	_, err := execx.Run(ctx, "systemctl", "--user", "stop", "--", unit)
 	return err
 }
 
 func Restart(ctx context.Context, unit string) error {
-	_, err := execx.Run(ctx, "systemctl", "--user", "restart", unit)
+	_, err := execx.Run(ctx, "systemctl", "--user", "restart", "--", unit)
 	return err
 }
 
 func Enable(ctx context.Context, unit string) error {
-	_, err := execx.Run(ctx, "systemctl", "--user", "enable", unit)
+	_, err := execx.Run(ctx, "systemctl", "--user", "enable", "--", unit)
 	return err
 }
 
 func Disable(ctx context.Context, unit string) error {
-	_, err := execx.Run(ctx, "systemctl", "--user", "disable", unit)
+	_, err := execx.Run(ctx, "systemctl", "--user", "disable", "--", unit)
 	return err
 }
 
@@ -381,4 +411,28 @@ func parseProperties(s string) map[string]string {
 		}
 	}
 	return vals
+}
+
+const showBatchSize = 100
+
+// showBatch runs `systemctl show` over names in chunks and returns each
+// unit's properties keyed by name. Blocks of output are separated by blank
+// lines; the Id property identifies which unit a block belongs to.
+func showBatch(ctx context.Context, names []string) (map[string]map[string]string, error) {
+	result := make(map[string]map[string]string, len(names))
+	for i := 0; i < len(names); i += showBatchSize {
+		chunk := names[i:min(i+showBatchSize, len(names))]
+		args := append([]string{"--user", "show", "--property=Id,LoadState,ActiveState,SubState,Description,SourcePath,FragmentPath,NRestarts,ConditionTimestamp,UnitFileState", "--"}, chunk...)
+		out, err := execx.Run(ctx, "systemctl", args...)
+		if err != nil {
+			return nil, err
+		}
+		for _, block := range strings.Split(out, "\n\n") {
+			vals := parseProperties(block)
+			if id := vals["Id"]; id != "" {
+				result[id] = vals
+			}
+		}
+	}
+	return result, nil
 }
