@@ -265,10 +265,31 @@ function openEntry(entry) {
   else openFile(entry)
 }
 
+const MEDIA_EXT = {
+  image: ['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg', 'bmp', 'ico', 'avif'],
+  audio: ['mp3', 'wav', 'ogg', 'oga', 'flac', 'm4a', 'aac', 'opus'],
+  video: ['mp4', 'webm', 'ogv', 'mkv', 'mov', 'm4v'],
+}
+function mediaKindOf(name) {
+  const ext = name.split('.').pop().toLowerCase()
+  if (ext === name.toLowerCase()) return ''
+  return Object.keys(MEDIA_EXT).find((k) => MEDIA_EXT[k].includes(ext)) || ''
+}
+const mediaKind = ref('')
+const mediaUrl = computed(() => (mediaKind.value ? filesApi.inlineUrl(fullPath(selectedName.value)) : ''))
+
 async function openFile(entry) {
   fileError.value = ''
   selectedName.value = entry.name
   notEditable.value = false
+  mediaKind.value = mediaKindOf(entry.name)
+  if (mediaKind.value) {
+    notEditable.value = true // hides Save, no text to load
+    fileContent.value = ''
+    originalContent.value = ''
+    fileDialog.value.showModal()
+    return
+  }
   fileContent.value = ''
   originalContent.value = ''
   fileDialog.value.showModal()
@@ -291,6 +312,7 @@ function closeFile() {
   fileContent.value = ''
   originalContent.value = ''
   notEditable.value = false
+  mediaKind.value = ''
   fileError.value = ''
 }
 
@@ -1035,7 +1057,7 @@ onMounted(() => loadDir(route.query.path || ''))
   </ul>
 
   <dialog ref="fileDialog" @mousedown="onDialogDown" @click="onDialogClick($event, closeFile)">
-    <article style="width: min(90vw, 60rem); max-width: min(90vw, 60rem)">
+    <article style="width: min(90vw, 60rem); max-width: min(90vw, 60rem); min-height: min(50vh, 18rem)">
       <div class="page-header">
         <h4>{{ selectedName }}</h4>
         <div class="toolbar" style="margin-bottom: 0">
@@ -1043,6 +1065,7 @@ onMounted(() => loadDir(route.query.path || ''))
           <details class="dropdown">
             <summary role="button" class="secondary">Actions</summary>
             <ul>
+              <li v-if="mediaKind"><a :href="mediaUrl" target="_blank" rel="noopener">Open media in new tab</a></li>
               <li><a href="#" @click.prevent="!fileBusy && saveAndDownload()">{{ isUnchanged ? 'Download' : 'Save & Download' }}</a></li>
               <li><a href="#" class="danger-link" @click.prevent="deleteOpenFile">Delete</a></li>
             </ul>
@@ -1051,7 +1074,12 @@ onMounted(() => loadDir(route.query.path || ''))
         </div>
       </div>
       <div v-if="fileError" class="error-banner">{{ fileError }}</div>
-      <div v-if="notEditable">
+      <div v-if="mediaKind" class="media-view">
+        <img v-if="mediaKind === 'image'" :src="mediaUrl" :alt="selectedName" @error="fileError = 'Failed to load image'" />
+        <audio v-else-if="mediaKind === 'audio'" :src="mediaUrl" controls preload="metadata" @error="fileError = 'Failed to load audio'"></audio>
+        <video v-else :src="mediaUrl" controls preload="metadata" @error="fileError = 'Failed to load video (format may be unsupported by the browser)'"></video>
+      </div>
+      <div v-else-if="notEditable">
         <p class="muted">Can't edit this file here (binary or larger than 1MB).</p>
         <button @click="triggerDownload(fullPath(selectedName))">Download</button>
       </div>
@@ -1335,6 +1363,16 @@ nav[aria-label='breadcrumb'] {
 nav[aria-label='breadcrumb'] ul {
   margin-bottom: 0;
 }
+nav[aria-label='breadcrumb'] li > a {
+  position: relative;
+  z-index: 1;
+}
+/* invisible overlay enlarges the hit area without affecting layout */
+nav[aria-label='breadcrumb'] li > a::before {
+  content: '';
+  position: absolute;
+  inset: -0.25rem -0.5rem;
+}
 table.rows tbody tr {
   user-select: none;
 }
@@ -1477,5 +1515,18 @@ table.rows tbody tr.cut td {
 .dir-link {
   color: inherit;
   text-decoration: none;
+}
+.media-view {
+  display: flex;
+  justify-content: center;
+}
+.media-view img,
+.media-view video {
+  max-width: 100%;
+  max-height: 70vh;
+  object-fit: contain;
+}
+.media-view audio {
+  width: 100%;
 }
 </style>

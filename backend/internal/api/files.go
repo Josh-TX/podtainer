@@ -21,7 +21,7 @@ func filesPath(w http.ResponseWriter, r *http.Request, key string) (string, bool
 }
 
 // getFiles serves a directory listing, a file's editor content, or (with
-// ?download=1) the raw file bytes.
+// ?download=1, optionally &inline=1 to skip the attachment header) the raw file bytes.
 func getFiles() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		p, ok := filesPath(w, r, "path")
@@ -38,7 +38,10 @@ func getFiles() http.HandlerFunc {
 				writeErr(w, 400, fmt.Errorf("cannot download a directory"))
 				return
 			}
-			w.Header().Set("Content-Disposition", mime.FormatMediaType("attachment", map[string]string{"filename": filepath.Base(p)}))
+			// ServeFile handles Range requests and content type by extension.
+			if r.URL.Query().Get("inline") != "1" {
+				w.Header().Set("Content-Disposition", mime.FormatMediaType("attachment", map[string]string{"filename": filepath.Base(p)}))
+			}
 			http.ServeFile(w, r, p)
 			return
 		}

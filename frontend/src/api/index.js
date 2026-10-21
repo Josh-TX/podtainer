@@ -129,6 +129,7 @@ export const filesApi = {
   chmod: (path, perm, recursive) =>
     request(`/files/chmod?path=${enc(path)}`, { method: 'POST', body: JSON.stringify({ perm, recursive }) }),
   downloadUrl: (path) => `/api/files?path=${enc(path)}&download=1`,
+  inlineUrl: (path) => `/api/files?path=${enc(path)}&download=1&inline=1`,
   async upload(path, file, overwrite) {
     const res = await fetch(`/api/files?path=${enc(path)}&upload=1${overwrite ? '&overwrite=1' : ''}`, { method: 'POST', body: file })
     const body = await res.json().catch(() => ({}))
