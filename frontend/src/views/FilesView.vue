@@ -1,9 +1,12 @@
 <script setup>
 import { ref, computed, watch, nextTick, onMounted, onBeforeUnmount } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { filesApi } from '../api'
 import CodeEditor from '../components/CodeEditor.vue'
 import { humanSize, timeAgo, fullDate } from '../utils/format'
 
+const route = useRoute()
+const router = useRouter()
 const currentPath = ref('')
 const entries = ref([])
 const dirError = ref('')
@@ -106,11 +109,46 @@ async function loadDir(path) {
     entries.value = data.entries
     dirSizes.value = {}
     sizeLoading.value = {}
+    return true
   } catch (e) {
     dirError.value = e.message
+    return false
   } finally {
     dirLoading.value = false
   }
+}
+
+function dirHref(path) {
+  return router.resolve({ path: '/files', query: { path } }).href
+}
+
+// Load a dir and record it in browser history (back button / refresh / new tab).
+async function navigate(path) {
+  if (!(await loadDir(path))) return
+  if (route.query.path !== currentPath.value) router.push({ query: { path: currentPath.value } })
+}
+
+watch(
+  () => route.query.path,
+  (p) => {
+    if (route.path !== '/files') return
+    if ((p || '') !== currentPath.value && (p || currentPath.value)) loadDir(p || '')
+  },
+)
+
+function onDirLinkClick(e) {
+  if (e.ctrlKey || e.metaKey) e.stopPropagation()
+  else e.preventDefault()
+}
+
+function onCrumbClick(e, path) {
+  if (e.ctrlKey || e.metaKey || e.shiftKey || e.button) return
+  e.preventDefault()
+  navigate(path)
+}
+
+function openInNewTab(entry) {
+  window.open(dirHref(fullPath(entry.name)), '_blank')
 }
 
 const editingPath = ref(false)
@@ -166,7 +204,7 @@ async function updateSuggestions() {
 
 function pickSuggestion(p) {
   pathInput.value = p + '/'
-  if (p !== currentPath.value) loadDir(p)
+  if (p !== currentPath.value) navigate(p)
   pathInputEl.value?.focus()
   updateSuggestions()
 }
@@ -175,14 +213,14 @@ async function submitPath() {
   let p = pathInput.value.trim()
   if (p.length > 1) p = p.replace(/\/+$/, '')
   cancelEditPath()
-  if (p && p !== currentPath.value) await loadDir(p)
+  if (p && p !== currentPath.value) await navigate(p)
 }
 
 function onPathInput(e) {
   const v = pathInput.value
   if (e.inputType?.startsWith('insert') && v.endsWith('/')) {
     const p = v.length > 1 ? v.replace(/\/+$/, '') : v
-    if (p && p !== currentPath.value) loadDir(p)
+    if (p && p !== currentPath.value) navigate(p)
   }
   updateSuggestions()
 }
@@ -223,7 +261,7 @@ async function computeSize(entry) {
 }
 
 function openEntry(entry) {
-  if (entry.isDir) loadDir(fullPath(entry.name))
+  if (entry.isDir) navigate(fullPath(entry.name))
   else openFile(entry)
 }
 
@@ -755,11 +793,11 @@ async function runSearch() {
 
 async function openSearchResult(r) {
   searchDialog.value.close()
-  if (r.isDir) return loadDir(r.path)
+  if (r.isDir) return navigate(r.path)
   const i = r.path.lastIndexOf('/')
   const dir = i > 0 ? r.path.slice(0, i) : '/'
   const name = r.path.slice(i + 1)
-  if (dir !== currentPath.value) await loadDir(dir)
+  if (dir !== currentPath.value) await navigate(dir)
   const entry = entries.value.find((e) => e.name === name)
   if (!entry) return
   if (filterText.value) filterText.value = ''
@@ -828,7 +866,7 @@ function onDrop(e) {
   uploadFiles(e.dataTransfer.files)
 }
 
-onMounted(() => loadDir(''))
+onMounted(() => loadDir(route.query.path || ''))
 </script>
 
 <template>
@@ -870,7 +908,7 @@ onMounted(() => loadDir(''))
       <nav v-if="!editingPath" ref="crumbNav" aria-label="breadcrumb">
         <ul>
           <li v-for="(crumb, i) in breadcrumbs" :key="crumb.path">
-            <a v-if="i < breadcrumbs.length - 1" href="#" @click.prevent="loadDir(crumb.path)">{{ crumb.name }}</a>
+            <a v-if="i < breadcrumbs.length - 1" :href="dirHref(crumb.path)" @click="onCrumbClick($event, crumb.path)">{{ crumb.name }}</a>
             <strong v-else>{{ crumb.name }}</strong>
           </li>
         </ul>
@@ -953,7 +991,7 @@ onMounted(() => loadDir(''))
                 @blur="commitRename"
                 />
               </span>
-              <template v-else>{{ entry.isDir ? '📁 ' : '📄 ' }}{{ entry.name }}<span v-if="entry.isSymlink" class="muted"> → {{ entry.linkTarget }}</span></template>
+              <template v-else>{{ entry.isDir ? '📁 ' : '📄 ' }}<a v-if="entry.isDir" :href="dirHref(fullPath(entry.name))" class="dir-link" @click="onDirLinkClick">{{ entry.name }}</a><template v-else>{{ entry.name }}</template><span v-if="entry.isSymlink" class="muted"> → {{ entry.linkTarget }}</span></template>
             </td>
             <td class="muted" style="position: relative; z-index: 1">
               <template v-if="entry.isDir">
@@ -983,6 +1021,7 @@ onMounted(() => loadDir(''))
   >
     <template v-if="singleSelected">
       <li><a href="#" @click.prevent="menuAction(openEntry)">Open</a></li>
+      <li v-if="menu.entry.isDir"><a href="#" @click.prevent="menuAction(openInNewTab)">Open in new tab</a></li>
       <li v-if="!menu.entry.isDir"><a href="#" @click.prevent="menuAction((e) => triggerDownload(fullPath(e.name)))">Download</a></li>
       <li><a href="#" @click.prevent="menuAction(startRename)">Rename</a></li>
     </template>
@@ -1147,9 +1186,13 @@ onMounted(() => loadDir(''))
   display: block;
   padding: 0.35rem 1rem;
   text-decoration: none;
-  color: var(--pico-color);
+  color: var(--pico-contrast);
 }
-.ctx-menu a.danger-link {
+.ctx-menu li a:is(:hover, :active, :focus, :visited) {
+  color: var(--pico-contrast);
+}
+.ctx-menu li a.danger-link,
+.ctx-menu li a.danger-link:is(:hover, :active, :focus, :visited) {
   color: var(--pico-del-color, #c62828);
 }
 .ctx-menu a:hover {
@@ -1430,5 +1473,9 @@ table.rows tbody tr.cut td {
 }
 .dropzone.dragging {
   border-color: var(--pico-primary);
+}
+.dir-link {
+  color: inherit;
+  text-decoration: none;
 }
 </style>
