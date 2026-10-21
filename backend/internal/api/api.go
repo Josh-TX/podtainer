@@ -103,6 +103,9 @@ func NewMux(cfg *config.Config, a *auth.Auth, shellMgr *shellsvc.Manager, execMg
 	api.HandleFunc("PATCH /api/files", moveFilesEntry())
 	api.HandleFunc("POST /api/files/chmod", chmodFilesEntry())
 	api.HandleFunc("DELETE /api/files", deleteFilesEntry())
+	api.HandleFunc("POST /api/files/conflicts", checkFilesConflicts())
+	api.HandleFunc("POST /api/files/paste", pasteFiles())
+	api.HandleFunc("POST /api/files/delete", deleteFilesBatch())
 
 	api.HandleFunc("GET /api/shell/sessions", listShellSessions(shellMgr))
 	api.HandleFunc("POST /api/shell/sessions", createShellSession(shellMgr))

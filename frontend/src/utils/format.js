@@ -1,7 +1,15 @@
-export function timeAgo(dateStr) {
+export function timeAgo(dateStr, short = false) {
   const sec = Math.floor((Date.now() - new Date(dateStr).getTime()) / 1000)
   if (sec < 60) return 'just now'
   const min = Math.floor(sec / 60)
+  if (short) {
+    if (min < 60) return `${min}m ago`
+    const h = Math.floor(min / 60)
+    if (h < 48) return `${h}h ago`
+    const d = Math.floor(h / 24)
+    if (d < 90) return `${d}d ago`
+    return new Date(dateStr).toLocaleDateString()
+  }
   if (min < 60) return `${min} minute${min === 1 ? '' : 's'} ago`
   const hr = Math.floor(min / 60)
   if (hr < 48) return `${hr} hour${hr === 1 ? '' : 's'} ago`

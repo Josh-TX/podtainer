@@ -119,6 +119,12 @@ export const filesApi = {
   deleteEntry: (path) => request(`/files?path=${enc(path)}`, { method: 'DELETE' }),
   move: (path, dest, isCopy) =>
     request(`/files?path=${enc(path)}`, { method: 'PATCH', body: JSON.stringify({ dest, isCopy }) }),
+  conflicts: async (dests) =>
+    (await request('/files/conflicts', { method: 'POST', body: JSON.stringify({ dests }) })).existing,
+  paste: async (items, isCopy) =>
+    (await request('/files/paste', { method: 'POST', body: JSON.stringify({ items, isCopy }) })).errors,
+  deleteMany: async (paths) =>
+    (await request('/files/delete', { method: 'POST', body: JSON.stringify({ paths }) })).errors,
   chmod: (path, perm, recursive) =>
     request(`/files/chmod?path=${enc(path)}`, { method: 'POST', body: JSON.stringify({ perm, recursive }) }),
   downloadUrl: (path) => `/api/files?path=${enc(path)}&download=1`,

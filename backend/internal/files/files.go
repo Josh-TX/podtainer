@@ -348,3 +348,62 @@ func DirSize(ctx context.Context, p string) (int64, error) {
 	}
 	return strconv.ParseInt(size, 10, 64)
 }
+
+// UniquePath returns p, or "name (n).ext" for the first n whose path is free.
+func UniquePath(p string) string {
+	if !exists(p) {
+		return p
+	}
+	dir, base := filepath.Split(p)
+	ext := filepath.Ext(base)
+	stem := strings.TrimSuffix(base, ext)
+	if stem == "" { // dotfile like ".bashrc"
+		stem, ext = base, ""
+	}
+	for n := 1; ; n++ {
+		c := filepath.Join(dir, fmt.Sprintf("%s (%d)%s", stem, n, ext))
+		if !exists(c) {
+			return c
+		}
+	}
+}
+
+// Existing returns the subset of paths that already exist.
+func Existing(paths []string) []string {
+	out := []string{}
+	for _, p := range paths {
+		if exists(p) {
+			out = append(out, p)
+		}
+	}
+	return out
+}
+
+// Paste moves or copies src to dest, resolving an existing dest per
+// resolution: "overwrite", "skip", "rename" (append " (n)"), or "" (error).
+// Copying into the same folder always renames; moving there is a no-op.
+// It reports whether anything was written.
+func Paste(src, dest string, isCopy bool, resolution string) (bool, error) {
+	if filepath.Dir(src) == filepath.Dir(dest) {
+		if !isCopy {
+			return false, nil
+		}
+		resolution = "rename"
+	}
+	if exists(dest) {
+		switch resolution {
+		case "skip":
+			return false, nil
+		case "rename":
+			dest = UniquePath(dest)
+		case "overwrite":
+			if src == dest || strings.HasPrefix(src, dest+string(filepath.Separator)) {
+				return false, fmt.Errorf("cannot overwrite %q with its own contents", dest)
+			}
+			if err := Delete(dest); err != nil {
+				return false, err
+			}
+		}
+	}
+	return true, Move(src, dest, isCopy)
+}

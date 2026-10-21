@@ -3,6 +3,7 @@ package api
 import (
 	"encoding/json"
 	"fmt"
+	"mime"
 	"net/http"
 	"path/filepath"
 
@@ -37,6 +38,7 @@ func getFiles() http.HandlerFunc {
 				writeErr(w, 400, fmt.Errorf("cannot download a directory"))
 				return
 			}
+			w.Header().Set("Content-Disposition", mime.FormatMediaType("attachment", map[string]string{"filename": filepath.Base(p)}))
 			http.ServeFile(w, r, p)
 			return
 		}
@@ -193,5 +195,83 @@ func deleteFilesEntry() http.HandlerFunc {
 			return
 		}
 		writeJSON(w, map[string]string{"status": "deleted"})
+	}
+}
+
+type filesResult struct {
+	Path  string `json:"path"`
+	Error string `json:"error,omitempty"`
+}
+
+// checkFilesConflicts reports which of the given destination paths exist.
+func checkFilesConflicts() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		var body struct {
+			Dests []string `json:"dests"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			writeErr(w, 400, err)
+			return
+		}
+		for _, d := range body.Dests {
+			if !filepath.IsAbs(d) {
+				writeErr(w, 400, fmt.Errorf("paths must be absolute"))
+				return
+			}
+		}
+		writeJSON(w, map[string][]string{"existing": files.Existing(body.Dests)})
+	}
+}
+
+// pasteFiles moves or copies many items; failures don't stop the batch.
+func pasteFiles() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		var body struct {
+			Items []struct {
+				Src        string `json:"src"`
+				Dest       string `json:"dest"`
+				Resolution string `json:"resolution"`
+			} `json:"items"`
+			IsCopy bool `json:"isCopy"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			writeErr(w, 400, err)
+			return
+		}
+		results := []filesResult{}
+		for _, it := range body.Items {
+			if !filepath.IsAbs(it.Src) || !filepath.IsAbs(it.Dest) {
+				results = append(results, filesResult{it.Src, "paths must be absolute"})
+				continue
+			}
+			if _, err := files.Paste(filepath.Clean(it.Src), filepath.Clean(it.Dest), body.IsCopy, it.Resolution); err != nil {
+				results = append(results, filesResult{it.Src, err.Error()})
+			}
+		}
+		writeJSON(w, map[string][]filesResult{"errors": results})
+	}
+}
+
+// deleteFilesBatch deletes many paths; failures don't stop the batch.
+func deleteFilesBatch() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		var body struct {
+			Paths []string `json:"paths"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			writeErr(w, 400, err)
+			return
+		}
+		results := []filesResult{}
+		for _, p := range body.Paths {
+			c, err := files.Clean(p)
+			if err == nil {
+				err = files.Delete(c)
+			}
+			if err != nil {
+				results = append(results, filesResult{p, err.Error()})
+			}
+		}
+		writeJSON(w, map[string][]filesResult{"errors": results})
 	}
 }
