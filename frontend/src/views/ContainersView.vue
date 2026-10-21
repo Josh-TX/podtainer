@@ -23,7 +23,6 @@ onMounted(load)
 
 <template>
   <h1>Containers</h1>
-  <p class="muted">Every container visible to podman ps -a, not just quadlet-managed ones.</p>
 
   <div v-if="error" class="error-banner">{{ error }}</div>
 

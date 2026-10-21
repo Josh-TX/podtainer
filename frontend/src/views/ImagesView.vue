@@ -71,7 +71,6 @@ onMounted(load)
       </details>
     </div>
   </div>
-  <p class="muted">Every podman image on the host, regardless of origin.</p>
 
   <div v-if="error" class="error-banner">{{ error }}</div>
 

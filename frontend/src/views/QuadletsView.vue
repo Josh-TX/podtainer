@@ -47,7 +47,6 @@ onMounted(load)
       <RouterLink to="/quadlets/new" role="button">New Unit</RouterLink>
     </div>
   </div>
-  <p class="muted">Every quadlet unit file in the search path, including ones not managed by Podtainer.</p>
 
   <div v-if="error" class="error-banner">{{ error }}</div>
 

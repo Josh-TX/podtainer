@@ -24,7 +24,6 @@ onMounted(load)
 
 <template>
   <h1>Volumes</h1>
-  <p class="muted">Every podman volume on the host, not just ones created by a stack.</p>
 
   <div v-if="error" class="error-banner">{{ error }}</div>
 

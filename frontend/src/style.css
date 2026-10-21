@@ -63,6 +63,14 @@ header nav ul li.active::after {
   align-items: center;
 }
 
+.page-header:not(:has(> h1[style])) {
+  margin-bottom: var(--pico-typography-spacing-vertical);
+}
+
+.page-header > h1:not([style]) {
+  margin-bottom: 0;
+}
+
 button, [role=button] {
   --pico-form-element-spacing-vertical: 0.45rem;
   --pico-form-element-spacing-horizontal: 0.9rem;

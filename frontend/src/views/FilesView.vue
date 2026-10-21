@@ -472,6 +472,20 @@ const statusText = computed(() => {
   return text
 })
 
+const multiSel = computed(() => selectedEntries.value.length > 1)
+const selDirs = computed(() => selectedEntries.value.filter((e) => e.isDir))
+const selFiles = computed(() => selectedEntries.value.filter((e) => !e.isDir))
+const selDirsLoading = computed(() => selDirs.value.some((e) => sizeLoading.value[e.name]))
+const selDirsSize = computed(() =>
+  selDirs.value.every((e) => dirSizes.value[e.name] !== undefined)
+    ? selDirs.value.reduce((n, e) => n + dirSizes.value[e.name], 0)
+    : null,
+)
+const selFilesSize = computed(() => selFiles.value.reduce((n, e) => n + e.size, 0))
+function computeSelectedSizes() {
+  selDirs.value.filter((e) => dirSizes.value[e.name] === undefined && !sizeLoading.value[e.name]).forEach(computeSize)
+}
+
 function onWindowClick(e) {
   closeMenu()
   if (e.target.closest?.('tr, button, a, input, label, summary, dialog, .ctx-menu')) return
@@ -701,7 +715,8 @@ const menu = ref({ open: false, x: 0, y: 0, entry: null })
 const menuEl = ref(null)
 
 async function openMenu(e, entry) {
-  if (!selection.value.has(entry.name)) selectOnly(entry.name)
+  if (!entry) clearSelection()
+  else if (!selection.value.has(entry.name)) selectOnly(entry.name)
   menu.value = { open: true, x: e.clientX, y: e.clientY, entry }
   await nextTick()
   // Clamp to the viewport so a click near the bottom/right edge still shows
@@ -714,6 +729,11 @@ async function openMenu(e, entry) {
   if (x + rect.width + pad > window.innerWidth) x = x - rect.width
   menu.value.x = Math.max(pad, x)
   menu.value.y = Math.max(pad, y)
+}
+
+function onBlankContextMenu(e) {
+  if (e.target.closest?.('tbody tr')) return
+  openMenu(e, null)
 }
 
 function closeMenu() {
@@ -897,7 +917,8 @@ onMounted(() => loadDir(route.query.path || ''))
     <h1>Files</h1>
   <div class="toolbar action-bar">
     <span v-if="clipboard" class="clip-info" :title="clipboard.mode === 'cut' ? 'Cut' : 'Copied'">
-      <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="5" y="4" width="14" height="18" rx="2"/><path d="M9 2h6v4H9z"/><path d="M9 11h6M9 14.5h6M9 18h6"/></svg>
+      <svg v-if="clipboard.mode === 'cut'" viewBox="0 0 24 24" width="21" height="21" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="6" cy="7.5" r="2.75"/><circle cx="6" cy="16.5" r="2.75"/><path d="M8.3 9 21 16M8.3 15 21 8"/></svg>
+      <svg v-else viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="5" y="4" width="14" height="18" rx="2"/><path d="M9 2h6v4H9z"/><path d="M9 11h6M9 14.5h6M9 18h6"/></svg>
       {{ clipboard.names.length }} {{ clipboard.names.length === 1 ? 'item' : 'items' }}
     </span>
     <template v-if="selection.size">
@@ -968,7 +989,18 @@ onMounted(() => loadDir(route.query.path || ''))
     <button class="secondary" style="margin: 0" @click="openSearch">Deep search</button>
   </div>
 
-  <p class="muted status-line">{{ statusText }}</p>
+  <p v-if="multiSel" class="muted status-line">
+    <template v-if="selDirs.length">
+      {{ selDirs.length }} {{ selDirs.length === 1 ? 'folder' : 'folders' }}
+      (<span v-if="selDirsLoading" aria-busy="true"></span><template v-else-if="selDirsSize !== null">{{ humanSize(selDirsSize) }}</template><a v-else href="#" @click.prevent.stop="computeSelectedSizes">compute</a>)
+    </template>
+    <template v-if="selDirs.length && selFiles.length"> and </template>
+    <template v-if="selFiles.length">
+      {{ selFiles.length }} {{ selFiles.length === 1 ? 'file' : 'files' }} ({{ humanSize(selFilesSize) }})
+    </template>
+    selected
+  </p>
+  <p v-else class="muted status-line">{{ statusText }}</p>
 
   <div v-if="dirError" class="error-banner">{{ dirError }}</div>
   <div
@@ -976,16 +1008,17 @@ onMounted(() => loadDir(route.query.path || ''))
     @dragover="onDragOver"
     @dragleave="onDragLeave"
     @drop="onDrop"
+    @contextmenu.prevent="onBlankContextMenu"
   >
     <p v-if="dirLoading" aria-busy="true">Loading…</p>
     <template v-else>
       <table class="rows">
         <thead>
           <tr>
-            <th class="sortable" @click="setSort('name')">Name<span v-if="sortKey === 'name'" class="chev" :class="{ up: sortAsc }"></span></th>
-            <th class="sortable" @click="setSort('size')">Size<span v-if="sortKey === 'size'" class="chev" :class="{ up: sortAsc }"></span></th>
-            <th class="sortable" @click="setSort('modTime')">Modified<span v-if="sortKey === 'modTime'" class="chev" :class="{ up: sortAsc }"></span></th>
-            <th class="sortable" @click="setSort('mode')">Mode<span v-if="sortKey === 'mode'" class="chev" :class="{ up: sortAsc }"></span></th>
+            <th><span class="sortable" @click="setSort('name')">Name<span v-if="sortKey === 'name'" class="chev" :class="{ up: sortAsc }"></span></span></th>
+            <th><span class="sortable" @click="setSort('size')">Size<span v-if="sortKey === 'size'" class="chev" :class="{ up: sortAsc }"></span></span></th>
+            <th><span class="sortable" @click="setSort('modTime')">Modified<span v-if="sortKey === 'modTime'" class="chev" :class="{ up: sortAsc }"></span></span></th>
+            <th><span class="sortable" @click="setSort('mode')">Mode<span v-if="sortKey === 'mode'" class="chev" :class="{ up: sortAsc }"></span></span></th>
             <th>Owner</th>
           </tr>
         </thead>
@@ -1041,6 +1074,11 @@ onMounted(() => loadDir(route.query.path || ''))
     @click.stop
     @contextmenu.prevent
   >
+    <template v-if="!menu.entry">
+      <li><a href="#" @click.prevent="menuAction(newFile)">New File</a></li>
+      <li><a href="#" @click.prevent="menuAction(newFolder)">New Folder</a></li>
+    </template>
+    <template v-else>
     <template v-if="singleSelected">
       <li><a href="#" @click.prevent="menuAction(openEntry)">Open</a></li>
       <li v-if="menu.entry.isDir"><a href="#" @click.prevent="menuAction(openInNewTab)">Open in new tab</a></li>
@@ -1054,6 +1092,7 @@ onMounted(() => loadDir(route.query.path || ''))
     <li v-if="clipboard && singleSelected?.isDir"><a href="#" @click.prevent="menuAction((e) => paste(fullPath(e.name)))">Paste into</a></li>
     <li v-if="singleSelected"><a href="#" @click.prevent="menuAction(openPerms)">Permissions</a></li>
     <li><a href="#" class="danger-link" @click.prevent="menuAction(deleteSelected)">Delete</a></li>
+    </template>
   </ul>
 
   <dialog ref="fileDialog" @mousedown="onDialogDown" @click="onDialogClick($event, closeFile)">
@@ -1418,9 +1457,15 @@ table.rows tbody tr.cut td {
 .chev.up {
   transform: translateY(0.1em) rotate(-135deg);
 }
+.dropzone thead tr {
+  cursor: default;
+}
 .sortable {
   cursor: pointer;
   user-select: none;
+}
+.sortable:hover {
+  text-decoration: underline;
 }
 .dropzone {
   flex: 1;
