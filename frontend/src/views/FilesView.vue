@@ -13,7 +13,6 @@ const sizeLoading = ref({})
 const sortKey = ref('name')
 const sortAsc = ref(true)
 const dragging = ref(false)
-const showHidden = ref(true)
 const filterText = ref('')
 
 const selectedName = ref('')
@@ -71,7 +70,7 @@ const sortedEntries = computed(() => {
     return e.name.toLowerCase()
   }
   const q = filterText.value.trim().toLowerCase()
-  return entries.value.filter((e) => (showHidden.value || !e.name.startsWith('.')) && (!q || e.name.toLowerCase().includes(q))).sort((a, b) => {
+  return entries.value.filter((e) => (!q || e.name.toLowerCase().includes(q))).sort((a, b) => {
     if (a.isDir !== b.isDir) return a.isDir ? -1 : 1
     const x = val(a)
     const y = val(b)
@@ -257,8 +256,15 @@ function closeFile() {
   fileError.value = ''
 }
 
+// Only close on a backdrop click that also started on the backdrop, so a
+// drag that begins inside the dialog and releases outside keeps it open.
+let downOnBackdrop = false
+function onDialogDown(e) {
+  downOnBackdrop = e.target === e.currentTarget
+}
+
 function onDialogClick(e, close) {
-  if (e.target === e.currentTarget) close()
+  if (e.target === e.currentTarget && downOnBackdrop) close()
 }
 
 async function saveFile() {
@@ -370,7 +376,7 @@ function onRowClick(e, entry) {
     for (let i = Math.min(a, b); i <= Math.max(a, b); i++) next.add(names[i])
     selection.value = next
   } else if (selection.value.size === 1 && selection.value.has(name)) {
-    renameTimer = setTimeout(() => startRename(entry), 300)
+    renameTimer = setTimeout(() => startRename(entry), 500)
   } else {
     selectOnly(name)
   }
@@ -392,7 +398,7 @@ function countText(list) {
 }
 
 function filterCountText() {
-  const all = entries.value.filter((e) => showHidden.value || !e.name.startsWith('.'))
+  const all = entries.value
   const totalDirs = all.filter((e) => e.isDir).length
   const dirs = sortedEntries.value.filter((e) => e.isDir).length
   const files = sortedEntries.value.length - dirs
@@ -663,7 +669,7 @@ function menuAction(fn) {
 function onKeydown(e) {
   if (e.key === 'Escape') closeMenu()
   if (e.target.closest?.('input, textarea, select, dialog, [contenteditable]')) return
-  if (fileDialog.value?.open || permDialog.value?.open || conflictDialog.value?.open) return
+  if (fileDialog.value?.open || searchDialog.value?.open || permDialog.value?.open || conflictDialog.value?.open) return
   const mod = e.ctrlKey || e.metaKey
   const key = e.key.toLowerCase()
   if (e.key === 'Escape') {
@@ -700,6 +706,68 @@ onBeforeUnmount(() => {
   window.removeEventListener('scroll', closeMenu, true)
   window.removeEventListener('keydown', onKeydown)
 })
+
+// --- deep search ---
+
+const searchDialog = ref(null)
+const searchRoot = ref('')
+const searchQuery = ref('')
+const searchRegex = ref(false)
+const searchResults = ref([])
+const searchTruncated = ref(false)
+const searchBusy = ref(false)
+const searchError = ref('')
+const searchDone = ref(false)
+
+function openSearch() {
+  searchRoot.value = currentPath.value
+  searchError.value = ''
+  searchDialog.value.showModal()
+}
+
+function resetSearch() {
+  searchQuery.value = ''
+  searchResults.value = []
+  searchTruncated.value = false
+  searchDone.value = false
+  searchError.value = ''
+}
+
+async function runSearch() {
+  const q = searchQuery.value
+  if (!q || searchBusy.value) return
+  searchError.value = ''
+  searchResults.value = []
+  searchTruncated.value = false
+  searchDone.value = false
+  searchBusy.value = true
+  try {
+    const data = await filesApi.search(searchRoot.value.trim() || currentPath.value, q, searchRegex.value)
+    searchResults.value = data.results
+    searchTruncated.value = data.truncated
+    searchDone.value = true
+  } catch (e) {
+    searchError.value = e.message
+  } finally {
+    searchBusy.value = false
+  }
+}
+
+async function openSearchResult(r) {
+  searchDialog.value.close()
+  if (r.isDir) return loadDir(r.path)
+  const i = r.path.lastIndexOf('/')
+  const dir = i > 0 ? r.path.slice(0, i) : '/'
+  const name = r.path.slice(i + 1)
+  if (dir !== currentPath.value) await loadDir(dir)
+  const entry = entries.value.find((e) => e.name === name)
+  if (!entry) return
+  if (filterText.value) filterText.value = ''
+  selectOnly(name)
+  await nextTick()
+  document.querySelector(`tr[data-name="${CSS.escape(name)}"]`)?.scrollIntoView({ block: 'center' })
+  openFile(entry)
+}
 
 // --- upload ---
 
@@ -837,10 +905,7 @@ onMounted(() => loadDir(''))
       <input v-model="filterText" class="filter-input" type="text" placeholder="Filter files and folders" autocomplete="off" @keydown.esc="filterText = ''" />
       <button v-if="filterText" type="button" class="filter-clear" aria-label="Clear filter" @click="filterText = ''">&times;</button>
     </div>
-    <label style="margin: 0">
-      <input v-model="showHidden" type="checkbox" />
-      Show hidden
-    </label>
+    <button class="secondary" style="margin: 0" @click="openSearch">Deep search</button>
   </div>
 
   <p class="muted status-line">{{ statusText }}</p>
@@ -868,6 +933,7 @@ onMounted(() => loadDir(''))
           <tr
             v-for="entry in sortedEntries"
             :key="entry.name"
+            :data-name="entry.name"
             :class="{ selected: selection.has(entry.name), focused: focusName === entry.name, cut: clipboard?.mode === 'cut' && clipHere && clipboard.names.includes(entry.name) }"
             @click="onRowClick($event, entry)"
             @dblclick="onRowDblClick(entry)"
@@ -929,7 +995,7 @@ onMounted(() => loadDir(''))
     <li><a href="#" class="danger-link" @click.prevent="menuAction(deleteSelected)">Delete</a></li>
   </ul>
 
-  <dialog ref="fileDialog" @click="onDialogClick($event, closeFile)">
+  <dialog ref="fileDialog" @mousedown="onDialogDown" @click="onDialogClick($event, closeFile)">
     <article style="width: min(90vw, 60rem); max-width: min(90vw, 60rem)">
       <div class="page-header">
         <h4>{{ selectedName }}</h4>
@@ -954,6 +1020,33 @@ onMounted(() => loadDir(''))
     </article>
   </dialog>
 
+  <dialog ref="searchDialog" @close="resetSearch" @mousedown="onDialogDown" @click="onDialogClick($event, () => searchDialog.close())">
+    <article class="search-article">
+      <div class="page-header">
+        <h4>Deep search</h4>
+        <button class="secondary" @click="searchDialog.close()">Close</button>
+      </div>
+      <label>
+        Search in
+        <input v-model="searchRoot" type="text" spellcheck="false" autocomplete="off" style="font-family: monospace" />
+      </label>
+      <form class="search-row" @submit.prevent="runSearch">
+        <div class="search-input-wrap">
+          <input v-model="searchQuery" type="text" :placeholder="searchRegex ? 'Regex (matches name)' : 'Name contains'" autocomplete="off" spellcheck="false" autofocus />
+          <button type="button" :class="['regex-toggle', { on: searchRegex }]" :aria-pressed="searchRegex" title="Use regular expression" @click="searchRegex = !searchRegex">.*</button>
+        </div>
+        <button type="submit" :disabled="searchBusy || !searchQuery" :aria-busy="searchBusy">Search</button>
+      </form>
+      <div v-if="searchError" class="error-banner">{{ searchError }}</div>
+      <p v-if="searchDone && !searchBusy" class="muted status-line">
+        {{ searchResults.length }}{{ searchTruncated ? '+' : '' }} {{ searchResults.length === 1 ? 'result' : 'results' }}{{ searchTruncated ? ' (truncated)' : '' }}
+      </p>
+      <ul class="search-results">
+        <li v-for="r in searchResults" :key="r.path" @click="openSearchResult(r)">{{ r.isDir ? '📁 ' : '📄 ' }}{{ r.path }}</li>
+      </ul>
+    </article>
+  </dialog>
+
   <dialog ref="conflictDialog" @close="onConflictClose">
     <article>
       <h4>Name conflict</h4>
@@ -974,7 +1067,7 @@ onMounted(() => loadDir(''))
     </article>
   </dialog>
 
-  <dialog ref="permDialog" @click="onDialogClick($event, closePerms)">
+  <dialog ref="permDialog" @mousedown="onDialogDown" @click="onDialogClick($event, closePerms)">
     <article v-if="permEntry">
       <h4>Permissions: {{ permEntry.name }}</h4>
       <div v-if="permError" class="error-banner">{{ permError }}</div>
@@ -1256,6 +1349,84 @@ table.rows tbody tr.cut td {
   margin-right: calc(-1 * var(--pico-spacing));
   padding-right: var(--pico-spacing);
   border: 2px dashed transparent;
+}
+.search-article {
+  display: flex;
+  flex-direction: column;
+  width: min(90vw, 50rem);
+  max-width: min(90vw, 50rem);
+  height: 90vh;
+  max-height: 90vh;
+}
+.search-article > * {
+  flex: none;
+}
+.search-article > .search-results {
+  flex: 1;
+}
+.search-row {
+  display: flex;
+  gap: 0.5rem;
+  margin-bottom: 0.5rem;
+}
+.search-input-wrap {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+}
+.search-input-wrap input {
+  width: 100%;
+  margin: 0;
+  padding-right: 3rem;
+}
+.regex-toggle {
+  position: absolute;
+  right: 0.35rem;
+  top: 50%;
+  transform: translateY(-50%);
+  width: auto;
+  margin: 0;
+  height: 2rem;
+  padding: 0 0.5rem;
+  border: 0;
+  background: transparent;
+  color: var(--pico-muted-color);
+  font-family: monospace;
+  font-size: 0.95rem;
+  line-height: 1.2;
+}
+.regex-toggle:hover {
+  background: rgba(128, 128, 128, 0.25);
+}
+.regex-toggle.on,
+.regex-toggle.on:hover {
+  color: #fff;
+  background: #3b82f6;
+}
+.search-row button {
+  margin: 0;
+  width: auto;
+}
+.search-results {
+  margin: 0;
+  padding: 0;
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  list-style: none;
+  border: var(--pico-border-width) solid var(--pico-muted-border-color);
+  border-radius: var(--pico-border-radius);
+}
+.search-results li {
+  margin: 0;
+  padding: 0.3rem 0.75rem;
+  font-family: monospace;
+  font-size: 0.9rem;
+  word-break: break-all;
+  cursor: pointer;
+}
+.search-results li:hover {
+  background: rgba(59, 130, 246, 0.2);
 }
 .dropzone.dragging {
   border-color: var(--pico-primary);

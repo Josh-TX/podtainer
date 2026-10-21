@@ -111,6 +111,7 @@ export const volumesApi = {
 export const filesApi = {
   list: async (path) => request(`/files?path=${enc(path || '')}`),
   read: (path) => request(`/files?path=${enc(path)}`),
+  search: (path, q, regex) => request(`/files/search?path=${enc(path)}&q=${enc(q)}${regex ? '&regex=1' : ''}`),
   dirSize: async (path) => (await request(`/files/size?path=${enc(path)}`)).size,
   writeFile: (path, content) =>
     request(`/files?path=${enc(path)}`, { method: 'PUT', body: JSON.stringify({ content }) }),

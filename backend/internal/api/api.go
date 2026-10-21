@@ -98,6 +98,7 @@ func NewMux(cfg *config.Config, a *auth.Auth, shellMgr *shellsvc.Manager, execMg
 
 	api.HandleFunc("GET /api/files", getFiles())
 	api.HandleFunc("GET /api/files/size", getFilesDirSize())
+	api.HandleFunc("GET /api/files/search", searchFiles())
 	api.HandleFunc("POST /api/files", createFilesEntry())
 	api.HandleFunc("PUT /api/files", writeFilesEntry())
 	api.HandleFunc("PATCH /api/files", moveFilesEntry())

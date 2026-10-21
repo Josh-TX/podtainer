@@ -11,6 +11,7 @@ import (
 	"os"
 	"os/user"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -406,4 +407,68 @@ func Paste(src, dest string, isCopy bool, resolution string) (bool, error) {
 		}
 	}
 	return true, Move(src, dest, isCopy)
+}
+
+// SearchResult is one match from Search.
+type SearchResult struct {
+	Path  string `json:"path"`
+	IsDir bool   `json:"isDir"`
+}
+
+// SearchLimit caps the number of results returned by Search.
+const SearchLimit = 1000
+
+// Search walks root for entries whose name matches q (case-insensitive
+// substring, or regexp when useRegex). Unreadable subtrees are skipped.
+// truncated reports that SearchLimit was hit.
+func Search(ctx context.Context, root, q string, useRegex bool) (results []SearchResult, truncated bool, err error) {
+	var re *regexp.Regexp
+	lq := strings.ToLower(q)
+	if useRegex {
+		if re, err = regexp.Compile("(?i)" + q); err != nil {
+			return nil, false, err
+		}
+	}
+	results = []SearchResult{}
+	errLimit := errors.New("limit")
+	err = filepath.WalkDir(root, func(p string, d fs.DirEntry, err error) error {
+		if cerr := ctx.Err(); cerr != nil {
+			return cerr
+		}
+		if err != nil {
+			if d != nil && d.IsDir() {
+				return fs.SkipDir
+			}
+			return nil
+		}
+		if p == root {
+			return nil
+		}
+		name := d.Name()
+		var hit bool
+		if re != nil {
+			hit = re.MatchString(name)
+		} else {
+			hit = strings.Contains(strings.ToLower(name), lq)
+		}
+		if !hit {
+			return nil
+		}
+		isDir := d.IsDir()
+		if d.Type()&fs.ModeSymlink != 0 {
+			if t, err := os.Stat(p); err == nil {
+				isDir = t.IsDir()
+			}
+		}
+		if len(results) >= SearchLimit {
+			truncated = true
+			return errLimit
+		}
+		results = append(results, SearchResult{Path: p, IsDir: isDir})
+		return nil
+	})
+	if errors.Is(err, errLimit) {
+		err = nil
+	}
+	return results, truncated, err
 }

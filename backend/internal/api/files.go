@@ -275,3 +275,30 @@ func deleteFilesBatch() http.HandlerFunc {
 		writeJSON(w, map[string][]filesResult{"errors": results})
 	}
 }
+
+func searchFiles() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		p, ok := filesPath(w, r, "path")
+		if !ok {
+			return
+		}
+		q := r.URL.Query().Get("q")
+		if q == "" {
+			writeErr(w, 400, fmt.Errorf("query required"))
+			return
+		}
+		if isDir, _, err := files.Stat(p); err != nil {
+			writeErr(w, 404, err)
+			return
+		} else if !isDir {
+			writeErr(w, 400, fmt.Errorf("not a directory"))
+			return
+		}
+		results, truncated, err := files.Search(r.Context(), p, q, r.URL.Query().Get("regex") == "1")
+		if err != nil {
+			writeErr(w, 400, err)
+			return
+		}
+		writeJSON(w, map[string]any{"results": results, "truncated": truncated})
+	}
+}
